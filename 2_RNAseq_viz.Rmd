@@ -1,0 +1,139 @@
+---
+title: "Visualisation of DESeq2 results"
+description: "DEG analysis based on DESeq2 and GSEA"
+principal investigator: "Joaquín de Navascués"
+researcher: "Aleix Puig, modified by Joaquín de Navascués"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: readable
+    df_print: paged
+---
+```{r set-publication-theme, echo=FALSE, cache=FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+```
+
+```{r setup, echo = FALSE, cache = FALSE}
+knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'), 
+                      fig.align = 'center', fig.height = 5, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+```
+
+# 0 Getting ready
+
+We have 4 different conditions expressed with the _esg-Gal4_ driver:
+
+* in batch one:
+  
+  * _UAS-daughterless_ (_da_)
+  * _UAS-da^RNAi^_ (TRiP-line, either JF02488 or JF02092)
+  * and their control
+
+* in batch two:
+
+  * _UAS-da:da_
+  * _UAS-scute_
+  * and their control
+
+We have their "transcripts per million" (tpm) in different RDS files.
+
+```{r, include=FALSE}
+library(ggplot2)
+library(ggthemes) # italics in the figures
+library(ggtext) # italics in the figures
+library(pheatmap)        # to plot heatmap
+library(here); setwd(here())
+```
+
+# 1 Principal Components Analysis
+
+## 1.1. PCA of the batches separately
+
+### 1.1.1 _da_ overexpression and knock-down
+
+Include the whole dataset (as opposed to only the genes with significant DE).
+```{r}
+# get the data (fresh session)
+targets_b1 <- read.table("resources/targets_daoekd.txt", header=TRUE, sep="\t")
+tpmNormalisedCounts_b1 <- readRDS('daoekd_counts.RDS')
+# remove all rows that have no variance
+tpmNormalisedCounts_b1_pca <- tpmNormalisedCounts_b1[
+  rowSums(tpmNormalisedCounts_b1[-1] != tpmNormalisedCounts_b1[[2]], na.rm = TRUE) != 0,
+  ]
+```
+
+### PCA object
+```{r}
+pca <- prcomp(t(tpmNormalisedCounts_b1), center=TRUE, scale=TRUE)
+scores <- data.frame(targets_b1$sampleID, pca$x[,1:2])
+summary(pca)
+```
+### Create QC plot
+```{r}
+targets_b1$Condition[targets_b1$Condition=='DaDaOE'] <- '*esg>da:da*'
+targets_b1$Condition[targets_b1$Condition=='ScOE'] <- '*esg>scute*'
+targets_b1$Condition[targets_b1$Condition=='Control'] <- '*esg>*'
+
+ggplot(scores,
+       aes(x = PC1, y = PC2, label=factor(targets_b1$sampleID), colour=factor(targets_b1$Condition) )
+       ) +
+  geom_point(size=2.5) + 
+  geom_text(hjust=0, vjust=0) +
+  scale_colour_discrete(name="condition") +
+  theme(legend.text=element_markdown(size=9))
+```
+
+### 1.1.2 _da:da_ and _scute_ overexpression
+
+Include the whole dataset (as opposed to only the genes with significant DE).
+```{r}
+targets <- read.table("resources/targets_dadasc.txt", header=TRUE, sep="\t")
+tpmNormalisedCounts <- readRDS('dadasc_counts.RDS')
+# remove all rows that have no variance
+tpmNormalisedCounts_pca <- tpmNormalisedCounts[
+  rowSums(tpmNormalisedCounts[-1] != tpmNormalisedCounts[[2]], na.rm = TRUE) != 0,
+  ]
+```
+
+### PCA object
+```{r}
+pca <- prcomp(t(tpmNormalisedCounts_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleID, pca$x[,1:2])
+summary(pca)
+```
+### Create QC plot
+```{r}
+targets$Condition[targets$Condition=='DaDaOE'] <- '*esg>da:da*'
+targets$Condition[targets$Condition=='ScOE'] <- '*esg>scute*'
+targets$Condition[targets$Condition=='Control'] <- '*esg>*'
+
+ggplot(scores,
+       aes(x = PC1, y = PC2, label=factor(targets$sampleID), colour=factor(targets$Condition))
+       ) +
+  geom_point(size=2.5) + 
+  scale_colour_discrete(name="condition") +
+  theme(legend.text=element_markdown(size=9))
+```
+
+## 1.2 PCA of all conditions
+
+# 2 Heatmap
+
+Plot the tpm values
+```{r eval=FALSE, include=FALSE}
+library(tibble)
+relative_Significant_Genes <- sortedFinalData_named %>% 
+  filter(padj <= 0.01) %>%
+  filter(log2FoldChange >= 1 | log2FoldChange <= -1) %>%
+  dplyr::select(external_gene_name, starts_with("TPM")) %>%
+  column_to_rownames(var="external_gene_name") %>%
+  data.matrix()
+
+pdf(paste("output/", ConditionTwo, ".pdf"))
+heatmap(heatmap_prep)
+dev.off()
+```
+
