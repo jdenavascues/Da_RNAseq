@@ -205,7 +205,7 @@ if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
 if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
     stop()
 }
-saveRDS(tpmNormalisedCounts, 'dadasc_counts.RDS')
+saveRDS(tpmNormalisedCounts, 'daoekd_counts.RDS')
 ```
 
 ### 2.1.1 _da_ knock-down vs control
@@ -390,7 +390,7 @@ if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
 if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
     stop()
 }
-saveRDS(tpmNormalisedCounts, 'daoekd_counts.RDS')
+saveRDS(tpmNormalisedCounts, 'dadasc_counts.RDS')
 ```
 
 #### Compare _da:da_ overexpression and control
