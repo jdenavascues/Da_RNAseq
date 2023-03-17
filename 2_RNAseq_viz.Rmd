@@ -57,31 +57,31 @@ library(here); setwd(here())
 Include the whole dataset (as opposed to only the genes with significant DE).
 ```{r}
 # get the data (fresh session)
-targets_b1 <- read.table("resources/targets_daoekd.txt", header=TRUE, sep="\t")
-tpmNormalisedCounts_b1 <- readRDS('daoekd_counts.RDS')
+targetsB1 <- read.table("resources/targets_daoekd.txt", header=TRUE, sep="\t")
+tpmNormalisedCountsB1 <- readRDS('daoekd_counts.RDS')
 # remove all rows that have no variance
-tpmNormalisedCounts_b1_pca <- tpmNormalisedCounts_b1[
-  rowSums(tpmNormalisedCounts_b1[-1] != tpmNormalisedCounts_b1[[2]], na.rm = TRUE) != 0,
+tpmNormalisedCountsB1_pca <- tpmNormalisedCountsB1[
+  rowSums(tpmNormalisedCountsB1[-1] != tpmNormalisedCountsB1[[2]], na.rm = TRUE) != 0,
   ]
 ```
 
 ### PCA object
 ```{r}
-pca <- prcomp(t(tpmNormalisedCounts_b1), center=TRUE, scale=TRUE)
-scores <- data.frame(targets_b1$sampleID, pca$x[,1:2])
+pca <- prcomp(t(tpmNormalisedCountsB1_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targetsB1$sampleID, pca$x[,1:2])
 summary(pca)
 ```
 ### Create QC plot
 ```{r}
-targets_b1$Condition[targets_b1$Condition=='DaDaOE'] <- '*esg>da:da*'
-targets_b1$Condition[targets_b1$Condition=='ScOE'] <- '*esg>scute*'
-targets_b1$Condition[targets_b1$Condition=='Control'] <- '*esg>*'
+targetsB1$Condition[targetsB1$Condition=='DaOE'] <- '*esg>da*'
+targetsB1$Condition[targetsB1$Condition=='DaKD'] <- '*esg>da^RNAi^*'
+targetsB1$Condition[targetsB1$Condition=='Control'] <- '*esg>*'
 
 ggplot(scores,
-       aes(x = PC1, y = PC2, label=factor(targets_b1$sampleID), colour=factor(targets_b1$Condition) )
+       aes(x = PC1, y = PC2, label=factor(targetsB1$sampleID), colour=factor(targetsB1$Condition) )
        ) +
-  geom_point(size=2.5) + 
-  geom_text(hjust=0, vjust=0) +
+  geom_point(size=3) + 
+  geom_text(size=3, hjust=0.5, vjust=-1) +
   scale_colour_discrete(name="condition") +
   theme(legend.text=element_markdown(size=9))
 ```
@@ -90,35 +90,62 @@ ggplot(scores,
 
 Include the whole dataset (as opposed to only the genes with significant DE).
 ```{r}
-targets <- read.table("resources/targets_dadasc.txt", header=TRUE, sep="\t")
-tpmNormalisedCounts <- readRDS('dadasc_counts.RDS')
+targetsB2 <- read.table("resources/targets_dadasc.txt", header=TRUE, sep="\t")
+tpmNormalisedCountsB2 <- readRDS('dadasc_counts.RDS')
 # remove all rows that have no variance
-tpmNormalisedCounts_pca <- tpmNormalisedCounts[
-  rowSums(tpmNormalisedCounts[-1] != tpmNormalisedCounts[[2]], na.rm = TRUE) != 0,
+tpmNormalisedCountsB2_pca <- tpmNormalisedCountsB2[
+  rowSums(tpmNormalisedCountsB2[-1] != tpmNormalisedCountsB2[[2]], na.rm = TRUE) != 0,
   ]
 ```
 
 ### PCA object
 ```{r}
-pca <- prcomp(t(tpmNormalisedCounts_pca), center=TRUE, scale=TRUE)
-scores <- data.frame(targets$sampleID, pca$x[,1:2])
+pca <- prcomp(t(tpmNormalisedCountsB2_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targetsB2$sampleID, pca$x[,1:2])
 summary(pca)
 ```
 ### Create QC plot
 ```{r}
-targets$Condition[targets$Condition=='DaDaOE'] <- '*esg>da:da*'
-targets$Condition[targets$Condition=='ScOE'] <- '*esg>scute*'
-targets$Condition[targets$Condition=='Control'] <- '*esg>*'
+targetsB2$Condition[targetsB2$Condition=='DaDaOE'] <- '*esg>da:da*'
+targetsB2$Condition[targetsB2$Condition=='ScOE'] <- '*esg>scute*'
+targetsB2$Condition[targetsB2$Condition=='Control'] <- '*esg>*'
 
 ggplot(scores,
-       aes(x = PC1, y = PC2, label=factor(targets$sampleID), colour=factor(targets$Condition))
+       aes(x = PC1, y = PC2, label=factor(targetsB2$sampleID), colour=factor(targetsB2$Condition))
        ) +
-  geom_point(size=2.5) + 
+  geom_point(size=3) + 
+  geom_text(size=3, hjust=0.5, vjust=-1) +
   scale_colour_discrete(name="condition") +
   theme(legend.text=element_markdown(size=9))
 ```
 
 ## 1.2 PCA of all conditions
+
+Include the whole dataset (as opposed to only the genes with significant DE).
+```{r}
+targets <- rbind(targetsB1, targetsB2)
+common_genes <- intersect(rownames(tpmNormalisedCountsB1), rownames(tpmNormalisedCountsB2))
+tpmNormalisedCounts <- cbind(tpmNormalisedCountsB1[common_genes,],
+                             tpmNormalisedCountsB2[common_genes,])
+# remove all rows that have no variance
+tpmNormalisedCounts_pca <- tpmNormalisedCounts[
+  rowSums(tpmNormalisedCounts[-1] != tpmNormalisedCounts[[2]], na.rm = TRUE) != 0,
+  ]
+# pca object
+pca <- prcomp(t(tpmNormalisedCounts_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleID, pca$x[,1:2])
+# plot
+ggplot(scores,
+       aes(x = PC1, y = PC2, label=factor(targets$sampleID), colour=factor(targets$Condition))
+       ) +
+  geom_point(size=3) + 
+  geom_text(size=3, hjust=0.5, vjust=-1) +
+  scale_colour_discrete(name="condition") +
+  theme(legend.text=element_markdown(size=9))
+```
+###
+### this needs to be addressed with some batch correction.
+###
 
 # 2 Heatmap
 

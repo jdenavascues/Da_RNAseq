@@ -127,7 +127,7 @@ We want to remove genes with low counts _in these samples_, so we do:
 ```{r}
 cpms <- cpm(rawData)
 keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, originally)
-new_rawData <- rawData[keep,]
+rawData <- rawData[keep,]
 ```
 
 #### Create a DeSEQ2 design matrix
@@ -326,7 +326,7 @@ rownames(rawData) <- fileContents$Geneid
 # filter by cpm
 cpms <- cpm(rawData)
 keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, originally)
-new_rawData <- rawData[keep,]
+rawData <- rawData[keep,]
 
 # Create a DeSEQ2 design matrix
 exptDesign = data.frame(
