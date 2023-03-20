@@ -45,6 +45,7 @@ library(ggplot2)
 library(ggthemes) # italics in the figures
 library(ggtext) # italics in the figures
 library(pheatmap)        # to plot heatmap
+library(tibble)
 library(here); setwd(here())
 ```
 
@@ -149,16 +150,28 @@ ggplot(scores,
 
 # 2 Heatmap
 
+Get the TMP values from the previous script
+```{r}
+# Load tmp values
+l <- list.files(getwd())
+tmpdata <- l[unlist(lapply(l, grepl, pattern='_vs_'))]
+sortedFinalData_named_KD   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='KD'))] )
+sortedFinalData_named_DaDa <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='DaDa'))] )
+sortedFinalData_named_OE   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='_DaOE'))] )
+sortedFinalData_named_Sc   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='Sc'))] )
+
+
+```
 Plot the tpm values
-```{r eval=FALSE, include=FALSE}
-library(tibble)
-relative_Significant_Genes <- sortedFinalData_named %>% 
+
+```{r}
+relative_Significant_Genes <- sortedFinalData_named_KD %>% 
   filter(padj <= 0.01) %>%
   filter(log2FoldChange >= 1 | log2FoldChange <= -1) %>%
   dplyr::select(external_gene_name, starts_with("TPM")) %>%
   column_to_rownames(var="external_gene_name") %>%
   data.matrix()
 
-heatmap(heatmap_prep)
+#heatmap(heatmap_prep)
 ```
 

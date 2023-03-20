@@ -422,7 +422,7 @@ sortedFinalData_named <- merge(sortedFinalData, dlist, by=0)
 sortedFinalData_named <- sortedFinalData_named[,-1]
 
 # Write data to file
-write.table(sortedFinalData, file=paste("output/daoekd/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+write.table(sortedFinalData, file=paste("output/dadasc/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
 saveRDS(sortedFinalData_named, paste(conditionOne, "_vs_", conditionTwo, ".RDS", sep="") )
 
 # Get significant genes, because we want to cluster on this behaviour
@@ -457,7 +457,8 @@ sortedFinalData_named <- merge(sortedFinalData, dlist, by=0)
 sortedFinalData_named <- sortedFinalData_named[,-1]
 
 # Write data to file
-write.table(sortedFinalData, file=paste("output/daoekd/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+write.table(sortedFinalData, file=paste("output/dadasc/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+saveRDS(sortedFinalData_named, paste(conditionOne, "_vs_", conditionTwo, ".RDS", sep="") )
 
 # Get significant genes, because we want to cluster on this behaviour
 significantGenes <- as.vector(unlist(subset(sortedFinalData_named, pvalue <= 0.05, select=c("ensemblGeneID"))))
