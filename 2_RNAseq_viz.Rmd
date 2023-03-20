@@ -47,6 +47,12 @@ library(ggtext) # italics in the figures
 library(pheatmap)        # to plot heatmap
 library(tibble)
 library(here); setwd(here())
+
+#devtools::install_github("thomasp85/scico")
+library(scico)
+scico_palette_show(palettes = c("broc", "cork", "vik",
+                                "lisbon", "tofino", "berlin",
+                                "batlow", "roma"))
 ```
 
 # 1 Principal Components Analysis

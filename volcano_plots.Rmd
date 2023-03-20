@@ -7,20 +7,21 @@ output:
 ---
 
 ```{r}
-
-
 library(dplyr)
 library(purrr)
+library(calibrate)
+library(here); setwd(here())
+```
 
-setwd('/Users/aleix/Documents/bioinformatics/RNAseq')
+```{r}
+WT_vs_DD <- read.table(file="output/dadasc/differential_expression/Control_vs_DaDaOE.txt", header=TRUE, sep="\t")
+WT_vs_DA <- read.table(file="output/daoekd/differential_expression/Control_vs_DaOE.txt", header=TRUE, sep="\t")
+WT_vs_SC <- read.table(file="output/dadasc/differential_expression/Control_vs_ScOE.txt", header=TRUE, sep="\t")
+WT_vs_KD <- read.table(file="output/daoekd/differential_expression/Control_vs_DaKD.txt", header=TRUE, sep="\t")
+gene_list <- read.table(file="resources/gene_names.txt", header=TRUE, sep=" ")
+names(gene_list)[[1]] <- 'ensemblGeneID'
 
-WT_vs_2D <- read.table(file="output/differential_expression/2D_vs_WT.txt", header=TRUE, sep="\t")
-WT_vs_da <- read.table(file="output/differential_expression/da_vs_WT.txt", header=TRUE, sep="\t")
-WT_vs_sc <- read.table(file="output/differential_expression/sc_vs_WT.txt", header=TRUE, sep="\t")
-gene_list <- read.table(file="resources/gene_names.txt", header=TRUE, sep="\t")
-gene_list <- add_rownames(gene_list, "ensemblGeneID")
-
-tables <- list("2D" = WT_vs_2D, "da" = WT_vs_da, "sc" = WT_vs_sc)
+tables <- list("2D" = WT_vs_DD, "da" = WT_vs_DA, "sc" = WT_vs_SC, "kd" = WT_vs_KD)
 tables <- map(tables, function(df) merge(df, gene_list, by=1))
 tables <- map(tables, function(df) mutate(df, mean_tpm = rowMeans(df[,14:16])))
 
@@ -52,17 +53,45 @@ with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChan
 ################# SECOND VERSION ################# 
 
 # Make a basic volcano plot
-with(subset(df, padj>=.05 | abs(log2FoldChange)<=1), plot(log10(mean_tpm), log2FoldChange, pch=20, cex=.35, col=("#99999965"), main=list("Sc", cex=3.1), ylim=c(min(df$log2FoldChange, na.rm = TRUE),max(df$log2FoldChange, na.rm = TRUE))))
+with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
+     plot(log10(mean_tpm),
+          log2FoldChange,
+          pch=20, cex=.35, col=("#99999965"),
+          main=list("Sc", cex=3.1),
+          ylim=c(min(df$log2FoldChange, na.rm = TRUE),
+                 max(df$log2FoldChange, na.rm = TRUE))))
 
 # Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
-with(subset(df, padj<.05 & abs(log2FoldChange)>1), points(log10(mean_tpm), log2FoldChange, pch=20, cex=.35, col="#e2aa3b"))
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)), points(log10(mean_tpm), log2FoldChange, pch=20, cex=.9, col="#721f0f"))
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1), points(log10(mean_tpm), log2FoldChange, pch=20, cex=.9, col="#18631a"))
+with(subset(df, padj<.05 & abs(log2FoldChange)>1),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.35, col="#e2aa3b"))
+
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.9, col="#721f0f"))
+
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.9, col="#18631a"))
+
 abline(h=c(1,-1), lwd=c(2, 2))
 
 # Label points with the textxy function from the calibrate plot
-library(calibrate)
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)), textxy(log10(mean_tpm), log2FoldChange, labs=external_gene_name, cex=0.9, font=2, col="#721f0f"))
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1), textxy(log10(mean_tpm), log2FoldChange, labs=external_gene_name, cex=0.9, font=2, col="#18631a"))
+
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     textxy(log10(mean_tpm),
+            log2FoldChange,
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#721f0f"))
+plot()
+
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     textxy(log10(mean_tpm),
+            log2FoldChange,
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#18631a"))
 
 ```

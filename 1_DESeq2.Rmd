@@ -84,6 +84,7 @@ attributes = listAttributes(ensembl) #Defines the features that will be showed
 dlist <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ensembl)
 rownames(dlist) <- dlist$ensembl_gene_id
 dlist[1] <- NULL
+write.table(dlist, file="resources/gene_names.txt", col.names=NA)
 ```
 
 # 2 DGE analysis

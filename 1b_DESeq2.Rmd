@@ -1,0 +1,284 @@
+---
+title: "RNAseq analysis of FAC-sorted ISC/EBs with LOF/GOF treatment for Sc/Da"
+description: "DEG analysis based on DESeq2 and GSEA"
+principal investigator: "Joaquín de Navascués"
+researcher: "Aleix Puig, modified by Joaquín de Navascués"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: readable
+    df_print: paged
+---
+```{r set-publication-theme, echo=FALSE, cache=FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+```
+
+```{r setup, echo = FALSE, cache = FALSE}
+knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'), 
+                      fig.align = 'center', fig.height = 5, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+```
+
+# 1 Getting ready
+
+We have 4 different conditions expressed with the _esg-Gal4_ driver:
+
+* _UAS-daughterless_ (_da_)
+* _UAS-da^RNAi^_ (TRiP-line, either JF02488 or JF02092)
+* _UAS-da:da_
+* _UAS-scute_
+
+The target cells were labelled with UAS-GFP and FAC-sorted, RNA extracted, reverse-transcribed, amplified and sequenced with Illumina.
+Importantly, the first two have their own control, while the last two have a different one, as they were made separately.
+In the first version of this script, I am doing two separate analyses, but because eventually I will need to show all the data together, batch-correction will be required, which is what I will do here.
+
+```{r, include=FALSE}
+library(DESeq2)          # to normalise RNAseq count data and perform DEG analysis
+library(edgeR)
+library(biomaRt)         # to annotate the final gene list with common gene names
+library(rtracklayer)     # to handling gene/exon coordinates data
+library(GenomicFeatures) # to handling gene/exon coordinates data
+library(ggplot2)         # for making QC plots
+library(dplyr)           # for handling data frames
+library(stringr)         # for handling strings
+library(pheatmap)        # to plot heatmap
+library(here)
+setwd(here())
+```
+
+TPM function (we'll need it later)
+```{r}
+tpm <- function(counts, lengths) {
+  return ((counts * 1e6) / (lengths * sum(counts/lengths,na.rm=TRUE)))
+}
+```
+
+Read the gene coordinates from the GTF file into an R data structure from resources.
+Export the transcript lengths for all of the transcripts, from this object.
+Use the unique() function to get a vector of all gene IDs.
+Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
+
+```{r include=FALSE, warning=FALSE}
+txdb <- makeTxDbFromGRanges(import('resources/dmel-all-r6.50.gtf'))
+
+allTranscripts <- transcriptLengths(txdb)
+
+allGeneIDs <- unique(allTranscripts$gene_id)
+
+allGeneLengths <- as.data.frame(allTranscripts %>%
+  group_by(gene_id) %>%
+  summarize(max.tx_len = max(tx_len)) )
+```
+
+Genes are now identified as FlyBase IDs (e.g. FBgn0031208). To get the gene names:
+
+```{r}
+ensembl = useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
+                     dataset="dmelanogaster_gene_ensembl",
+                     host = "https://oct2022.archive.ensembl.org") # update this to the latest: https://www.ensembl.org/Help/ArchiveRedirect
+filters = listFilters(ensembl) # It defines filters in case you have a specific query
+attributes = listAttributes(ensembl) #Defines the features that will be showed
+
+dlist <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ensembl)
+rownames(dlist) <- dlist$ensembl_gene_id
+dlist[1] <- NULL
+write.table(dlist, file="resources/gene_names.txt", col.names=NA)
+```
+
+# 2 DGE analysis
+
+## 2.1 _daughterless_ overexpression and knockdown
+
+We are now ready to read‐in the sample descriptions for the gene expression analysis. 
+We need to define our conditions in the context of the biological replicates we have.
+The raw data is not ordered by grouping the different conditions, but by the name of the experiment.
+Therefore when I upload the sample descriptions I have to order them.
+Read this file into a data.frame.
+
+```{r}
+targets <- read.table("resources/targets_batched.txt", header=TRUE, sep="\t")
+```
+
+#### Read in featureCounts for all samples
+
+```{r}
+rawData <- NULL
+# each column of rawData will contain the reads per gene of a sample
+for (sampleID in targets$sampleID) {
+  if (file.exists( paste("input/dadasc/featurecounts/",
+                         sampleID,
+                         ".featurecount", sep="") )){
+    fileContents <- read.table(paste("input/dadasc/featurecounts/",
+                                       sampleID, ".featurecount", sep=""),
+                                 sep="\t",
+                                 header=T)
+    } else {
+      fileContents <- read.table(paste("input/daoekd/featurecounts/",
+                                       sampleID, ".featurecount", sep=""),
+                                 sep="\t",
+                                 header=T)
+      }
+  rawData <- cbind(rawData, fileContents[,7])
+}
+```
+
+Add column and row names to the rawData data.frame.
+```{r}
+colnames(rawData) <- targets$sampleID
+rownames(rawData) <- fileContents$Geneid
+```
+
+#### Filtering for cpm < 1
+
+We want to remove genes with low counts _in these samples_, so we do:
+
+```{r}
+cpms <- cpm(rawData)
+keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, originally)
+rawData <- rawData[keep,]
+```
+
+#### Create a DESeq2 design matrix
+
+To run DESeq2 (following the DeSEq2 analysis guide in bioconductor), we need to create an experimental design object (sample ID to treatment mapping).
+```{r}
+exptDesign = data.frame(
+  row.names = colnames(rawData),
+  condition = targets$Condition,
+  batch = targets$Batch)
+```
+
+#### Create a DeSEQ2 experimental object
+
+Build a DESeq2 object containing this experimental design and rawData.
+```{r, warning=FALSE}
+exptObject <- DESeqDataSetFromMatrix(countData = rawData,
+                                     colData = exptDesign,
+                                     design = ~ condition + batch)
+
+exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
+```
+
+#### Batch correction
+
+```{r}
+# Transform the normalized counts 
+vsd_Object <- vst(exptObject, blind=TRUE)
+plotPCA(vsd_Object)
+```
+
+Remove batch effect and re-plot:
+```{r}
+assay(vsd_Object) <- limma::removeBatchEffect(assay(vsd_Object), vsd_Object$batch)
+plotPCA(vsd_Object)
+```
+
+This makes better sense, though it seems that the effect of the KD is small and the batch effects are large enough that the controls can't group together.
+
+#### Basic QC and DGE analysis
+When performing quality assessment of our count data, we need to transform the normalized counts for better visualization of the variance for unsupervised clustering analyses. To assess the similarity of the samples using hierarchical heatmaps, transform the normalized counts and perform hierarchical clustering analysis.
+```{r}
+# Extract the matrix of transformed counts
+vsd_mat_Object <- assay(vsd_Object)
+# Compute the correlation values between samples
+vsd_cor_Object <- cor(vsd_mat_Object) 
+# Plot the heatmap
+pheatmap(vsd_cor_Object, annotation = dplyr::select(exptDesign, condition),
+         cluster_rows=FALSE, cluster_cols=FALSE)
+```
+
+Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
+```{r}
+analysisObject = DESeq(exptObject)
+```
+After fitting the model in the previous exercise, let's explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the plotDispEsts() function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions don't follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
+
+The assumptions DESeq2 makes are that the dispersions should generally decrease with increasing mean and that they should more or less follow the fitted line.
+
+```{r}
+plotDispEsts(analysisObject)
+```
+
+Retrospectively pull out the raw and normalised data from the analysis object.
+
+```{r}
+rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
+normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
+```
+
+#### TPM values
+Then generate TPM values, using tpm() function.
+```{r}
+rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T)
+rawCountData <- rawDataWithLengths[,colnames(rawCounts)]
+rownames(rawCountData) <- rawDataWithLengths[,1]
+
+tpmData <- NULL
+
+for (colName in colnames(rawCountData)) {
+    tpmData <- cbind(tpmData, tpm(rawDataWithLengths[,colName], rawDataWithLengths$max.tx_len))
+}
+
+tpmData <- as.data.frame(tpmData)
+colnames(tpmData) <- colnames(rawCounts)
+rownames(tpmData) <- rawDataWithLengths[,1]
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ]
+
+if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
+    stop()
+}
+if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
+    stop()
+}
+saveRDS(tpmNormalisedCounts, 'batched_counts.RDS')
+```
+
+### 2.1.1 _da_ knock-down vs control
+
+```{r}
+conditionOne <- 'WT'
+conditionTwo <- 'KD'
+```
+
+Select the relevant column from the counts object made previously.
+Add the term “raw”, “norm” or “tpm” to each of the column headings to distinguish the column names.
+```{r}
+conditions_sampleIDs <- targets[targets$Condition %in% c(conditionOne, conditionTwo),]$sampleID
+slimRawCounts           <- rawCounts           %>% select(all_of(conditions_sampleIDs))
+slimNormalisedCounts    <- normalisedCounts    %>% select(all_of(conditions_sampleIDs))
+slimTpmNormalisedCounts <- tpmNormalisedCounts %>% select(all_of(conditions_sampleIDs))
+
+colnames(slimRawCounts)           <- paste("raw", conditions_sampleIDs, sep=".")
+colnames(slimNormalisedCounts)    <- paste("norm", conditions_sampleIDs, sep=".")
+colnames(slimTpmNormalisedCounts) <- paste("tpm", conditions_sampleIDs, sep=".")
+```
+
+Create the comparison between the 2 conditions.
+Create a data.frame containing all the count and DEdata, and sorted by the pvalue column, with the most significant genes at the top of the data.frame.
+```{r}
+deData <- as.data.frame(results(analysisObject, contrast=c("condition", conditionOne, conditionTwo), pAdjustMethod="BH"))
+finalData <- cbind(rownames(deData), slimRawCounts, slimNormalisedCounts, slimTpmNormalisedCounts, deData)
+colnames(finalData)[1] <- "ensemblGeneID"
+```
+
+Sort data and give genes their names
+```{r}
+sortedFinalData <- finalData[order(finalData$pvalue), ] 
+sortedFinalData_named <- merge(sortedFinalData, dlist, by=0)
+sortedFinalData_named <- sortedFinalData_named[,-1]
+```
+
+Write this data to a file under output/
+```{r}
+write.table(sortedFinalData, file=paste("output/batched/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+saveRDS(sortedFinalData_named, paste(conditionOne, "_vs_", conditionTwo, ".RDS", sep="") )
+```
+
+Get significant genes, because we want to cluster on this behaviour
+```{r}
+significantGenes <- as.vector(unlist(subset(sortedFinalData_named, pvalue <= 0.05, select=c("ensemblGeneID"))))
+sigTpmNormalisedCounts <- subset(tpmNormalisedCounts, rownames(tpmNormalisedCounts) %in% significantGenes)
+```
