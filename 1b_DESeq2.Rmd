@@ -124,6 +124,18 @@ colnames(rawData) <- paste(targets$Condition, targets$Replicate, sep='_')
 rownames(rawData) <- fileContents$Geneid
 ```
 
+# 2 Batch correction with ComBat-seq
+
+Based on this tutorial:
+https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/
+```{r, echo=FALSE, warning=FALSE}
+library("sva") # >= v3.36.0
+library("ggplot2")
+library("gridExtra")
+library("edgeR")
+library("UpSetR")
+```
+
 Conditions, batches and replicates are all identified in `targets`.
 Let us use PCA to visualise the similarity between samples:
 ```{r}
@@ -136,28 +148,48 @@ pca_uncorrected[,"condition"] <- targets$Condition
 pca_uncorrected[,"batch"]     <- targets$Batch
 pca_uncorrected[,"replicate"] <- targets$Replicate
 # make plot
-cols <- c("a" = "#481567FF", "b" = "#1F968BFF")
 p1 <- ggplot(data=pca_uncorrected, aes(x=PC1, y=PC2, color=condition, shape=batch))
 p1 <- p1 + geom_point(size=3)
-p1 <- p1 + stat_ellipse(type="norm", linetype=2)
 p1 <- p1 + labs(title="PCA, RNA-seq counts for two batches of genetic manipulation in the fly gut", color="Condition", shape="Batch")
-p1 <- p1 + scale_colour_manual(values = cols)
 p1
 ```
 
-
-
-# 2 Batch correction with ComBat-seq
-
-Based on this tutorial:
-https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/
+Perform batch correction:
 ```{r}
-library("sva") # >= v3.36.0
-library("ggplot2")
-library("gridExtra")
-library("edgeR")
-library("UpSetR")
+# Transform the format of our groups and batches from names ("a", "b") to numbers (1, 2)
+# in the command below "sapply" is used to apply the "switch" command to each element and convert names to numbers as we define
+groups = sapply(as.character(targets$Condition), switch,
+                "DaKD" = 1, "DaOE" = 2, "Control" = 3, "DaDaOE" = 4, "ScOE" = 5, USE.NAMES = F)
+batches = sapply(as.character(targets$Batch), switch,
+                 "a" = 1, "b" = 2, USE.NAMES = F)
+# Run ComBat_seq
+corrected_data = ComBat_seq(counts = as.matrix(rawData), batch = batches, group = groups)
+# Join the gene IDs onto the now corrected counts from ComBat_seq
+# corrected_data = cbind(Gene=rownames(rawData), corrected_data) # no need to do this and then this will become non-numeric
 ```
+
+PCA of the corrected dataset:
+```{r}
+# calculate PC
+pca_corrected_obj <- prcomp(corrected_data)
+# pull PCA values from the object
+pca_corrected <- as.data.frame(pca_corrected_obj[2]$rotation)
+# assign labels
+pca_corrected[,"condition"] <- targets$Condition
+pca_corrected[,"batch"]     <- targets$Batch
+pca_corrected[,"replicate"] <- targets$Replicate
+# as above, create a PCA plot for comparison to the uncorrected data
+cols <- c("DaKD"="#1F78B4", "DaOE"="#FF7F00", "Control"="#6A3D9A", "DaDaOE"="#E31A1C" , "ScOE"="#33A02C")
+p2 <- ggplot(data=pca_corrected, aes(x=PC1, y=PC2, color=condition, shape=batch))
+p2 <- p2 + geom_point(size=3)
+p2 <- p2 + labs(title="PCA, RNA-seq counts for two batches of genetic manipulation in the fly gut, batch-corrected", color="Condition", shape="Batch")
+p2 <- p2 + scale_colour_manual(values = cols)
+p2
+```
+
+This is not very helpful - so maybe better do this after DESeq2 has done the normalisation.
+
+let us see later how if we use this as the input for DESeq2, it may work better...
 
 
 
