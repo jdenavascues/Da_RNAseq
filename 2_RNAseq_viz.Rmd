@@ -159,8 +159,6 @@ relative_Significant_Genes <- sortedFinalData_named %>%
   column_to_rownames(var="external_gene_name") %>%
   data.matrix()
 
-pdf(paste("output/", ConditionTwo, ".pdf"))
 heatmap(heatmap_prep)
-dev.off()
 ```
 
