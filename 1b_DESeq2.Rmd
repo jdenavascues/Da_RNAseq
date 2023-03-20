@@ -56,6 +56,8 @@ tpm <- function(counts, lengths) {
 }
 ```
 
+#### Read genomic features from GTF file
+
 Read the gene coordinates from the GTF file into an R data structure from resources.
 Export the transcript lengths for all of the transcripts, from this object.
 Use the unique() function to get a vector of all gene IDs.
@@ -73,6 +75,8 @@ allGeneLengths <- as.data.frame(allTranscripts %>%
   summarize(max.tx_len = max(tx_len)) )
 ```
 
+#### Get the gene symbols
+
 Genes are now identified as FlyBase IDs (e.g. FBgn0031208). To get the gene names:
 
 ```{r}
@@ -87,6 +91,88 @@ rownames(dlist) <- dlist$ensembl_gene_id
 dlist[1] <- NULL
 write.table(dlist, file="resources/gene_names.txt", col.names=NA)
 ```
+
+#### Load raw data
+
+Read in featureCounts for all samples:
+```{r}
+targets <- read.table("resources/targets_batched.txt", header=TRUE, sep="\t")
+
+rawData <- NULL
+# each column of rawData will contain the reads per gene of a sample
+for (sampleID in targets$sampleID) {
+  if (file.exists( paste("input/dadasc/featurecounts/",
+                         sampleID,
+                         ".featurecount", sep="") )){
+    fileContents <- read.table(paste("input/dadasc/featurecounts/",
+                                       sampleID, ".featurecount", sep=""),
+                                 sep="\t",
+                                 header=T)
+    } else {
+      fileContents <- read.table(paste("input/daoekd/featurecounts/",
+                                       sampleID, ".featurecount", sep=""),
+                                 sep="\t",
+                                 header=T)
+      }
+  rawData <- cbind(rawData, fileContents[,7])
+}
+```
+
+Add column and row names to the rawData matrix
+```{r}
+colnames(rawData) <- paste(targets$Condition, targets$Replicate, sep='_')
+rownames(rawData) <- fileContents$Geneid
+```
+
+Conditions, batches and replicates are all identified in `targets`.
+Let us use PCA to visualise the similarity between samples:
+```{r}
+# calculate PC
+pca_uncorrected_obj <- prcomp(rawData)
+# pull PCA values from the object
+pca_uncorrected <- as.data.frame(pca_uncorrected_obj[2]$rotation)
+# assign labels
+pca_uncorrected[,"condition"] <- targets$Condition
+pca_uncorrected[,"batch"]     <- targets$Batch
+pca_uncorrected[,"replicate"] <- targets$Replicate
+# make plot
+cols <- c("a" = "#481567FF", "b" = "#1F968BFF")
+p1 <- ggplot(data=pca_uncorrected, aes(x=PC1, y=PC2, color=condition, shape=batch))
+p1 <- p1 + geom_point(size=3)
+p1 <- p1 + stat_ellipse(type="norm", linetype=2)
+p1 <- p1 + labs(title="PCA, RNA-seq counts for two batches of genetic manipulation in the fly gut", color="Condition", shape="Batch")
+p1 <- p1 + scale_colour_manual(values = cols)
+p1
+```
+
+
+
+# 2 Batch correction with ComBat-seq
+
+Based on this tutorial:
+https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/
+```{r}
+library("sva") # >= v3.36.0
+library("ggplot2")
+library("gridExtra")
+library("edgeR")
+library("UpSetR")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # 2 DGE analysis
 
