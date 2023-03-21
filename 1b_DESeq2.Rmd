@@ -22,6 +22,22 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
+
+# START FROM SCRATCH
+# DGE ANALYSIS IS DONE WITH BATCH-CORRECTION BY DESEQ2 ALREADY
+# DO BATCH-CORRECTION USING DESEQ2 ALONE, MAYBE (ONLY MAYBE) USE COMBATSEQ_CRRECTION AS INPUT INTO DESEQ2
+# USE COMBATSEQ JUST FOR VISUALISATION IF POSSIBLE AND ONLY IF REALLY ADVANTAGEOUS OVER DESEQ2/LIMMA
+
+
+
+
+
+
+
+
+
+
+
 # 1 Getting ready
 
 We have five different conditions expressed with the _esg-Gal4_ driver, in two batches:
@@ -305,7 +321,7 @@ pca_NU[,"batch"]     <- targets$Batch
 pca_NU[,"replicate"] <- targets$Replicate
 xlab <- paste0("PC1, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
 ylab <- paste0("PC2, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**RAW, UNCORRECTED DATA**"
+subtitle <- "**NORMALISED, UNCORRECTED DATA**"
 q3 <- ggplot(data=pca_NU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
   geom_point(size=3) +
   labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
@@ -322,7 +338,7 @@ pca_NC[,"batch"]     <- targets$Batch
 pca_NC[,"replicate"] <- targets$Replicate
 xlab <- paste0("PC1, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
 ylab <- paste0("PC2, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**RAW, CORRECTED DATA**"
+subtitle <- "**NORMALISED, CORRECTED DATA**"
 q4 <- ggplot(data=pca_NC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
   geom_point(size=3) +
   labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
@@ -333,18 +349,25 @@ q4 <- ggplot(data=pca_NC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
 
 grid.arrange(q1, q2, q3, q4, ncol=2, nrow=2)
 ```
-the top plots are identical to using the `rawData`, but those using the `normalisedCounts` are quite different, and most importantly, cluster the controls together.
+The top plots are identical to using the `rawData`, but those using the `normalisedCounts` are quite different, and most importantly, cluster the controls together.
 
 # 3 Batch correction with BatchQC
 
 The first thing we need is to have the expression values as `quantile normalized`:
-```{r}
+```{r echo=FALSE, warning=FALSE, results=FALSE}
 QrawCounts <- normalize.quantiles(as.matrix(rawCounts))
+QnormalisedCounts <- normalize.quantiles(as.matrix(normalisedCounts))
+```
 
-batchQC(dat=QrawCounts,
+Now we can use the interactive `batchQC` mode to see the effect of applying batch correction using ComBat or SVA on either normalised or raw data:
+```{r echo=FALSE, warning=FALSE, results=FALSE}
+batchQC(
+        dat=QrawCounts,
+        #dat=QnormalisedCounts,
         batch=targets$Batch,
         condition=targets$Condition,
-        report_file="batchqc_report.html",
+        report_file="batchqc_report_raw.html",
+        #report_file="batchqc_report_norm.html",
         report_dir=".",
         report_option_binary="111111111",
         view_report=TRUE,
@@ -352,15 +375,76 @@ batchQC(dat=QrawCounts,
         batchqc_output=TRUE)
 ```
 
+The results from applying `ComBat-seq` (or `sva` too) to the `QnormalisedCounts` are great, with controls from both batches collapsing into a single cluster.
+
+Why is this different than what I get by applying `ComBat-seq` directly to the data?
+Maybe I need to use the quantile-normalised data? (this is required for `BatchQC` but I did not do it for the DESeq2-normalised data)
+However, if I try to get these outside the interactive environment of `BatchQC`, I can't:
+```{r echo=FALSE, warning=FALSE, fig.width=7, fig.height=3}
+# Quantile Normalised Uncorrected
+pca_QNU_obj <- prcomp(QnormalisedCounts)
+pca_QNU <- as.data.frame(pca_QNU_obj[2]$rotation)
+pca_QNU[,"condition"] <- targets$Condition
+pca_QNU[,"batch"]     <- targets$Batch
+pca_QNU[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_QNU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_QNU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**Q-NORMALISED, UNCORRECTED DATA**"
+r1 <- ggplot(data=pca_QNU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=2) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=10),
+        plot.subtitle=element_markdown(size=7))
+# Normalised Corrected
+corrQnormCounts = ComBat_seq(counts = as.matrix(QnormalisedCounts),
+                             batch = batches, group = groups)
+pca_QNC_obj <- prcomp(corrQnormCounts)
+pca_QNC <- as.data.frame(pca_QNC_obj[2]$rotation)
+pca_QNC[,"condition"] <- targets$Condition
+pca_QNC[,"batch"]     <- targets$Batch
+pca_QNC[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_QNC_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_QNC_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**Q-NORMALISED, BATCH-CORRECTED DATA (COMBAT)**"
+r2 <- ggplot(data=pca_QNC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=2) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=10),
+        plot.subtitle=element_markdown(size=7))
+
+grid.arrange(r1, r2, ncol=2)
+```
+
+Maybe this is because the DESeq data was normalised with all the batches together?
+It seems logical that the normalisation should be done separately (however, DESeq2 can deal with batches, so it does not look like this is essential)
+
+
 
 
 let us see later how if we use this as the input for DESeq2, it may work better...
 
 
+# 4 Batch correction with Surrogate Variable Analysis
 
+```{r}
+library(bladderbatch)
+data(bladderdata)
+library(pamr)
+library(limma)
+targets_trim <- targets[,c(1,4,5)]
+names(targets_trim) <- c('sample', 'condition', 'batch')
+rownames(targets_trim) <- names(normalisedCounts)
+targets_trim$sample <- 1:nrow(targets_trim)
+targets_trim <- targets_trim %>% mutate(
+  batch=purrr::set_names(1:2, c('a', 'b'))[batch]
+  )
+# apply(normalisedCounts, 2, function(x) anyNA(x)) # checks there are no NAs in the dataframe.
 
-
-
+```
 
 
 
@@ -432,7 +516,9 @@ Build a DESeq2 object containing this experimental design and rawData.
 ```{r, warning=FALSE}
 exptObject <- DESeqDataSetFromMatrix(countData = rawData,
                                      colData = exptDesign,
-                                     design = ~ condition + batch)
+                                     # the functions will look at the last variable:
+                                     # https://support.bioconductor.org/p/121408/
+                                     design = ~ batch + condition) 
 
 exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
 ```
@@ -447,7 +533,7 @@ plotPCA(vsd_Object)
 
 Remove batch effect and re-plot:
 ```{r}
-assay(vsd_Object) <- limma::removeBatchEffect(assay(vsd_Object), vsd_Object$batch)
+assay(vsd_Object) <- limma::removeBatchEffect(assay(vsd_Object), vsd_Object$batch) # do this just for plotting
 plotPCA(vsd_Object)
 ```
 
@@ -463,6 +549,17 @@ vsd_cor_Object <- cor(vsd_mat_Object)
 # Plot the heatmap
 pheatmap(vsd_cor_Object, annotation = dplyr::select(exptDesign, condition),
          cluster_rows=FALSE, cluster_cols=FALSE)
+
+# pheatmap(norm_OEsig[2:7], 
+#     color = heat_colors, 
+#     cluster_rows = T, 
+#     show_rownames = F,
+#     annotation = meta, 
+#     border_color = NA, 
+#     fontsize = 10, 
+#     scale = "row", 
+#     fontsize_row = 10, 
+#     height = 20)
 ```
 
 Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
@@ -492,7 +589,7 @@ for (colName in colnames(rawCountData)) {
 tpmData <- as.data.frame(tpmData)
 colnames(tpmData) <- colnames(rawCounts)
 rownames(tpmData) <- rawDataWithLengths[,1]
-tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ]
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] # Q for Aleix: is this normalised data?????
 
 if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
     stop()

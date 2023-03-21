@@ -165,8 +165,6 @@ sortedFinalData_named_KD   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pat
 sortedFinalData_named_DaDa <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='DaDa'))] )
 sortedFinalData_named_OE   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='_DaOE'))] )
 sortedFinalData_named_Sc   <- readRDS( tmpdata[unlist(lapply(tmpdata, grepl, pattern='Sc'))] )
-
-
 ```
 Plot the tpm values
 
@@ -179,5 +177,10 @@ relative_Significant_Genes <- sortedFinalData_named_KD %>%
   data.matrix()
 
 #heatmap(heatmap_prep)
+
+
+vsd <- assay(vst(dds))
+Z <- t(scale(t(vsd)))
+
 ```
 

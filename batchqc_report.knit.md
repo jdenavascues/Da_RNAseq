@@ -43,39 +43,39 @@ Summary
 
 ## Variation Analysis
 ### Variation explained by Batch and Condition
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
 
 
 ----------------------------------------------------------
    &nbsp;      Full (Condition+Batch)   Condition   Batch 
 ------------- ------------------------ ----------- -------
-  **Min.**             0.108              0.085       0   
+  **Min.**             0.934              0.786       0   
 
- **1st Qu.**           63.36              63.3      4.024 
+ **1st Qu.**            72.2              71.55     11.19 
 
- **Median**            81.56              81.55     13.65 
+ **Median**            85.44              85.02     26.79 
 
-  **Mean**             74.74              74.72     15.69 
+  **Mean**             79.53              79.06     27.21 
 
- **3rd Qu.**           91.68              91.68     24.09 
+ **3rd Qu.**            92.4              92.19     42.36 
 
-  **Max.**             99.98              99.98     60.31 
+  **Max.**             99.92              99.92     67.31 
 ----------------------------------------------------------
 
 ## P-value Analysis
 ### Distribution of Batch and Condition Effect p-values Across Genes
 
----------------------------------------------------------------------------------------------
-         &nbsp;            Min.     1st Qu.     Median     Mean     3rd Qu.   Max.   Ps<0.05 
------------------------- -------- ----------- ---------- --------- --------- ------ ---------
-   **Batch P-values**     0.1697    0.9169      0.9545    0.9408    0.9797     1        0    
+-------------------------------------------------------------------------------------------------
+         &nbsp;             Min.      1st Qu.     Median     Mean     3rd Qu.    Max.    Ps<0.05 
+------------------------ ---------- ----------- ---------- --------- --------- -------- ---------
+   **Batch P-values**      0.2207     0.5178      0.6917    0.6795    0.8512    0.9999      0    
 
- **Condition P-values**     0      2.416e-05   0.001446   0.07725   0.04215    1     0.7626  
----------------------------------------------------------------------------------------------
+ **Condition P-values**   2.22e-16   4.333e-05   0.001321   0.05563   0.02435   0.9986   0.8088  
+-------------------------------------------------------------------------------------------------
 
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto;" />
 
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-8-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-8-1.png" style="display: block; margin: auto;" />
 
 
 Differential Expression
@@ -83,90 +83,90 @@ Differential Expression
 ## Expression Plot
 Boxplots for all values for each of the samples and are colored by batch membership.
 
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-10-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-10-1.png" style="display: block; margin: auto;" />
 
 ## LIMMA
 
---------------------------------------------------------------------------------------------------------------------
-  &nbsp;    Condition: DaDaOE (logFC)   Condition: DaKD (logFC)   Condition: DaOE (logFC)   Condition: ScOE (logFC) 
----------- --------------------------- ------------------------- ------------------------- -------------------------
- **6710**             91.35                     -30.25                    -26.17                     7479           
+-------------------------------------------------------------------------------------------------
+     &nbsp;        Condition: DaDaOE (logFC)   Condition: DaKD (logFC)   Condition: DaOE (logFC) 
+----------------- --------------------------- ------------------------- -------------------------
+ **FBgn0029708**             169.3                     -109.9                    -17.88          
 
- **7194**             5.069                     -34.05                    -62.12                     4722           
+ **FBgn0266521**             41.15                     -137.7                      -44           
 
- **1991**             557.3                     -281.8                     944.4                     17996          
+ **FBgn0037697**            -27.44                     -151.5                    -160.1          
 
- **5129**             23.33                     -13.25                     130.4                     1599           
+ **FBgn0028516**             12.03                     -28.43                     49.35          
 
- **3771**             1572                       -1203                     1042                      17409          
+ **FBgn0085382**             35.17                     -39.39                    -7.476          
 
- **2117**            -3.686                     -19.05                    -11.24                     1222           
+ **FBgn0000591**             389.6                     -161.5                     957.8          
 
- **462**             -21.06                     -175.7                    -185.6                     7064           
+ **FBgn0000575**             63344                      -1358                     42641          
 
- **813**              57.37                     -12.22                     196.6                     5075           
+ **FBgn0003326**             53.8                      -33.96                     105.3          
 
- **6013**            -7.343                      4.333                      164                      1549           
+ **FBgn0039883**             203.1                     -318.4                    -119.8          
 
- **8637**            -41.86                     -90.75                    -59.15                     10430          
---------------------------------------------------------------------------------------------------------------------
+ **FBgn0015558**             26.24                      -32.9                    -8.971          
+-------------------------------------------------------------------------------------------------
 
 Table: Table continues below
 
  
-----------------------------------------------------
-  &nbsp;    AveExpr     F      P.Value    adj.P.Val 
----------- --------- ------- ----------- -----------
- **6710**    1556     10594   1.088e-20   1.086e-16 
+------------------------------------------------------------------------------------
+     &nbsp;        Condition: ScOE (logFC)   AveExpr    F      P.Value    adj.P.Val 
+----------------- ------------------------- --------- ------ ----------- -----------
+ **FBgn0029708**            5872              1196     2918   2.214e-17   1.148e-13 
 
- **7194**    1068     4948    9.277e-19   4.629e-15 
+ **FBgn0266521**            7845              1521     2888   2.349e-17   1.148e-13 
 
- **1991**    3538     3932    3.552e-18   1.182e-14 
+ **FBgn0037697**            5488              1101     2686   3.585e-17   1.168e-13 
 
- **5129**    370.9    2238    9.528e-17   2.377e-13 
+ **FBgn0028516**            2192              418.7    2002   1.983e-16   4.846e-13 
 
- **3771**    6489     1691    4.876e-16   9.732e-13 
+ **FBgn0085382**            1123               239     1690   5.318e-16   1.04e-12  
 
- **2117**    282.1    1632    5.998e-16   9.977e-13 
+ **FBgn0000591**            12944             2624     1596   7.398e-16   1.205e-12 
 
- **462**     1412     1542    8.36e-16    1.192e-12 
+ **FBgn0000575**            1350              18229    1384   1.696e-15   2.368e-12 
 
- **813**     967.4    1504    9.654e-16   1.204e-12 
+ **FBgn0003326**            1459              316.3    1272   2.777e-15   3.394e-12 
 
- **6013**    318.8    1415    1.382e-15   1.533e-12 
+ **FBgn0039883**            10820             2311     1238   3.239e-15   3.519e-12 
 
- **8637**    2040     1380    1.599e-15   1.596e-12 
-----------------------------------------------------
+ **FBgn0015558**            1206              246.4    1115   5.959e-15   5.597e-12 
+------------------------------------------------------------------------------------
 
 
 Median Correlations
 ===================
 This plot helps identify outlying samples.
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-13-1.png" style="display: block; margin: auto;" />
 
 
 Heatmaps
 ========
 ## Heatmap
 This is a heatmap of the given data matrix showing the batch effects and variations with different conditions.
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
 
 ## Sample Correlations
 This is a heatmap of the correlation between samples.
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
 
 
 Circular Dendrogram
 ===================
 This is a Circular Dendrogram of the given data matrix colored by batch to show the batch effects.
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-18-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-18-1.png" style="display: block; margin: auto;" />
 
 
 PCA: Principal Component Analysis
 =================================
 ## PCA
 This is a plot of the top two principal components colored by batch to show the batch effects.
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
 
 ## Explained Variation
 
@@ -174,46 +174,46 @@ This is a plot of the top two principal components colored by batch to show the 
   &nbsp;    Proportion of Variance (%)   Cumulative Proportion of   Percent Variation Explained by   Percent Variation Explained by   Condition Significance   Percent Variation Explained by   Batch Significance (p-value) 
                                                Variance (%)           Either Condition or Batch                Condition                    (p-value)                      Batch                                             
 ---------- ---------------------------- -------------------------- -------------------------------- -------------------------------- ------------------------ -------------------------------- ------------------------------
- **PC1**               40.2                        40.2                           99                               99                           0                           26.2                           0.9809            
+ **PC1**               50.3                        50.3                           98                              97.7                          0                           49.7                           0.2648            
 
- **PC2**              15.55                       55.74                          98.9                             98.9                          0                           19.6                           0.9863            
+ **PC2**              15.33                       65.62                          96.2                             95.8                          0                           7.1                            0.3513            
 
- **PC3**              13.55                       69.29                          95.3                             95.3                          0                           13.3                           0.9239            
+ **PC3**              10.51                       76.14                          95.7                             95.7                          0                           8.9                            0.9169            
 
- **PC4**              6.589                       75.88                          95.6                             95.6                          0                           4.4                            0.9511            
+ **PC4**               5.48                       81.62                          80.6                             79.3                       0.00077                         3                             0.4144            
 
- **PC5**              4.193                       80.08                          3.1                              3.1                         0.9852                        0.1                            0.9999            
+ **PC5**              3.392                       85.01                          13.3                             12.2                        0.7986                        0.4                            0.7179            
 
- **PC6**              3.816                       83.89                          2.5                              2.5                         0.9917                        0.2                            0.9722            
+ **PC6**                3                         88.01                          6.8                              6.2                         0.9328                         0                             0.7944            
 
- **PC7**              2.909                        86.8                          0.8                              0.8                         0.9989                         0                             0.9927            
+ **PC7**              2.372                       90.38                          1.9                              1.2                         0.9939                         0                             0.783             
 
- **PC8**              2.511                       89.31                          1.1                               1                          0.9986                        0.2                            0.9519            
+ **PC8**              2.013                       92.39                          4.1                              1.2                         0.9751                        0.1                            0.5774            
 
- **PC9**              2.247                       91.56                          0.3                              0.3                         0.9998                         0                             0.9972            
+ **PC9**              1.746                       94.14                          3.3                              2.9                         0.9824                         0                             0.8397            
 
- **PC10**             1.921                       93.48                          0.8                              0.8                         0.999                          0                             0.9627            
+ **PC10**             1.544                       95.68                           10                               5                          0.8703                        0.1                            0.4505            
 
- **PC11**             1.623                        95.1                          1.7                              1.7                         0.9956                        0.1                            0.9691            
+ **PC11**             1.239                       96.92                          0.8                              0.6                         0.9991                        0.1                            0.886             
 
- **PC12**             1.502                        96.6                          0.2                              0.2                         0.9999                         0                             0.9899            
+ **PC12**             0.9847                      97.91                          1.8                              1.4                         0.9947                         0                             0.832             
 
- **PC13**             1.328                       97.93                          0.5                              0.5                         0.9995                         0                             0.9875            
+ **PC13**             0.8356                      98.74                           1                               0.5                         0.9983                         0                             0.8245            
 
- **PC14**             1.107                       99.04                          0.2                              0.2                           1                            0                             0.9869            
+ **PC14**             0.7031                      99.45                          0.1                              0.1                           1                            0                             0.9853            
 
- **PC15**             0.9443                      99.98                          0.1                              0.1                           1                            0                             0.986             
+ **PC15**             0.5538                       100                           0.1                              0.1                           1                            0                             0.9992            
 
- **PC16**            0.01639                       100                           99.9                              0                            0                           35.8                             0               
+ **PC16**           6.649e-27                      100                            86                              0.1                        0.00067                        28.1                           1e-05             
 
- **PC17**            3.77e-29                      100                           26.7                             25.9                        0.4688                        1.3                            0.7288            
+ **PC17**           1.926e-29                      100                           83.2                             79.3                       0.01252                        50.9                           0.1356            
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 Shape
 =====
 This is a heatmap plot showing the variation of gene expression mean, variance, skewness and kurtosis between samples grouped by batch to see the batch effects variation
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-23-1.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-23-1.png" style="display: block; margin: auto;" />
 
 ```
 ## Note: Sample-wise p-value is calculated for the variation across samples on the measure across genes. Gene-wise p-value is calculated for the variation of each gene between batches on the measure across each batch. If the data is quantum normalized, then the Sample-wise measure across genes is same for all samples and Gene-wise p-value is a good measure.
@@ -231,20 +231,20 @@ This is a plot showing whether parametric or non-parameteric prior is appropriat
 ## Fitting L/S model and finding priors
 ```
 
-<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-25-1.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-25-2.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-25-3.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/combat_batchqc_report_files/figure-html/unnamed-chunk-25-4.png" style="display: block; margin: auto;" />
+<img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-25-1.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-25-2.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-25-3.png" style="display: block; margin: auto;" /><img src="/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq/svar_batchqc_report_files/figure-html/unnamed-chunk-25-4.png" style="display: block; margin: auto;" />
 
 ```
 ## Batch mean distribution across genes: Normal vs Empirical distribution
 ## Two-sided Kolmogorov-Smirnov test
 ## Selected Batch: 1
-## Statistic D = 0.0438
-## p-value = 0
+## Statistic D = 0.03163
+## p-value = 6.423e-09
 ## 
 ## 
 ## Batch Variance distribution across genes: Inverse Gamma vs Empirical distribution
 ## Two-sided Kolmogorov-Smirnov test
 ## Selected Batch: 1
-## Statistic D = 0.1219
+## Statistic D = 0.1865
 ## p-value = 0Note: The non-parametric version of ComBat takes much longer time to run and we recommend it only when the shape of the non-parametric curve widely differs such as a bimodal or highly skewed distribution. Otherwise, the difference in batch adjustment is very negligible and parametric version is recommended even if p-value of KS test above is significant.
 ```
 

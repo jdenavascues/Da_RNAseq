@@ -198,7 +198,7 @@ for (colName in colnames(rawCountData)) {
 tpmData <- as.data.frame(tpmData)
 colnames(tpmData) <- colnames(rawCounts)
 rownames(tpmData) <- rawDataWithLengths[,1]
-tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ]
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] # Q for Aleix: is this normalised data?????
 
 if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
     stop()
