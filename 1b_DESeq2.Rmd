@@ -24,27 +24,48 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
 
 # 1 Getting ready
 
-We have 4 different conditions expressed with the _esg-Gal4_ driver:
+We have five different conditions expressed with the _esg-Gal4_ driver, in two batches:
 
-* _UAS-daughterless_ (_da_)
-* _UAS-da^RNAi^_ (TRiP-line, either JF02488 or JF02092)
-* _UAS-da:da_
-* _UAS-scute_
+* Batch `a`:
+  
+  * _UAS-GFP_ (?) (control)
+  * _UAS-daughterless_ (_da_)
+  * _UAS-da^RNAi^_ (TRiP-line, either JF02488 or JF02092)
+  
+* Batch `b`:
+
+  * _UAS-GFP_ (?) (control)
+  * _UAS-da:da_
+  * _UAS-scute_
 
 The target cells were labelled with UAS-GFP and FAC-sorted, RNA extracted, reverse-transcribed, amplified and sequenced with Illumina.
 Importantly, the first two have their own control, while the last two have a different one, as they were made separately.
 In the first version of this script, I am doing two separate analyses, but because eventually I will need to show all the data together, batch-correction will be required, which is what I will do here.
 
-```{r, include=FALSE}
+```{r, echo=FALSE, warning=FALSE, results=FALSE}
+# DGE analysis
 library(DESeq2)          # to normalise RNAseq count data and perform DEG analysis
+# general bioinformatics
 library(edgeR)
 library(biomaRt)         # to annotate the final gene list with common gene names
 library(rtracklayer)     # to handling gene/exon coordinates data
 library(GenomicFeatures) # to handling gene/exon coordinates data
+# batch correction
+library(sva) # >= v3.36.0
+library(BatchQC)
+library(preprocessCore)
+# library(limma)
+# plotting and data tidying
 library(ggplot2)         # for making QC plots
 library(dplyr)           # for handling data frames
 library(stringr)         # for handling strings
 library(pheatmap)        # to plot heatmap
+library(gridExtra)
+library(UpSetR)
+library(ggthemes) # italics in the figures
+library(ggtext) # italics in the figures
+library(gridExtra)
+# general convenience
 library(here)
 setwd(here())
 ```
@@ -120,21 +141,23 @@ for (sampleID in targets$sampleID) {
 
 Add column and row names to the rawData matrix
 ```{r}
-colnames(rawData) <- paste(targets$Condition, targets$Replicate, sep='_')
+colnames(rawData) <- paste(targets$Condition, targets$Replicate, targets$Batch, sep='_')
 rownames(rawData) <- fileContents$Geneid
+```
+
+We want to remove genes with low counts _in these samples_, so we do:
+```{r}
+cpms <- cpm(rawData)
+keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, originally)
+rawData <- rawData[keep,]
 ```
 
 # 2 Batch correction with ComBat-seq
 
+## 2A Using raw count data
+
 Based on this tutorial:
 https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/
-```{r, echo=FALSE, warning=FALSE}
-library("sva") # >= v3.36.0
-library("ggplot2")
-library("gridExtra")
-library("edgeR")
-library("UpSetR")
-```
 
 Conditions, batches and replicates are all identified in `targets`.
 Let us use PCA to visualise the similarity between samples:
@@ -148,14 +171,26 @@ pca_uncorrected[,"condition"] <- targets$Condition
 pca_uncorrected[,"batch"]     <- targets$Batch
 pca_uncorrected[,"replicate"] <- targets$Replicate
 # make plot
-p1 <- ggplot(data=pca_uncorrected, aes(x=PC1, y=PC2, color=condition, shape=batch))
-p1 <- p1 + geom_point(size=3)
-p1 <- p1 + labs(title="PCA, RNA-seq counts for two batches of genetic manipulation in the fly gut", color="Condition", shape="Batch")
-p1
+cols <- c("DaKD"="#1F78B4", "DaOE"="#FF7F00", "Control"="#6A3D9A", "DaDaOE"="#E31A1C" , "ScOE"="#33A02C")
+xlab <- paste0("PC1, ",
+               round(summary(pca_uncorrected_obj)$importance["Proportion of Variance","PC1"]*100, 1),
+               " %")
+ylab <- paste0("PC2, ",
+               round(summary(pca_uncorrected_obj)$importance["Proportion of Variance","PC2"]*100, 1),
+               " %")
+title <- "PCA, *daugtherless* function RNA-seq analysis"
+subtitle <- "**RAW, UNCORRECTED DATA**"
+p1 <- ggplot(data=pca_uncorrected, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
 ```
 
 Perform batch correction:
-```{r}
+```{r, echo=FALSE, results=FALSE}
 # Transform the format of our groups and batches from names ("a", "b") to numbers (1, 2)
 # in the command below "sapply" is used to apply the "switch" command to each element and convert names to numbers as we define
 groups = sapply(as.character(targets$Condition), switch,
@@ -169,7 +204,7 @@ corrected_data = ComBat_seq(counts = as.matrix(rawData), batch = batches, group 
 ```
 
 PCA of the corrected dataset:
-```{r}
+```{r, fig.width=7, fig.height=3}
 # calculate PC
 pca_corrected_obj <- prcomp(corrected_data)
 # pull PCA values from the object
@@ -179,17 +214,181 @@ pca_corrected[,"condition"] <- targets$Condition
 pca_corrected[,"batch"]     <- targets$Batch
 pca_corrected[,"replicate"] <- targets$Replicate
 # as above, create a PCA plot for comparison to the uncorrected data
-cols <- c("DaKD"="#1F78B4", "DaOE"="#FF7F00", "Control"="#6A3D9A", "DaDaOE"="#E31A1C" , "ScOE"="#33A02C")
-p2 <- ggplot(data=pca_corrected, aes(x=PC1, y=PC2, color=condition, shape=batch))
-p2 <- p2 + geom_point(size=3)
-p2 <- p2 + labs(title="PCA, RNA-seq counts for two batches of genetic manipulation in the fly gut, batch-corrected", color="Condition", shape="Batch")
-p2 <- p2 + scale_colour_manual(values = cols)
-p2
+xlab <- paste0("PC1, ",
+               round(summary(pca_corrected_obj)$importance["Proportion of Variance","PC1"]*100, 1),
+               " %")
+ylab <- paste0("PC2, ",
+               round(summary(pca_corrected_obj)$importance["Proportion of Variance","PC2"]*100, 1),
+               " %")
+subtitle <- "**RAW, BATCH-CORRECTED DATA**"
+p2 <- ggplot(data=pca_corrected, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
+grid.arrange(p1, p2, ncol = 2)
 ```
 
-This is not very helpful - so maybe better do this after DESeq2 has done the normalisation.
+This is not very helpful - the controls are still very far away. Maybe this would work better if DESeq2 had normalised the data first?
+
+## 2B Using DESeq2-normalised data
+
+Create experimental design object (mapping samples to conditions and batches)
+```{r}
+exptDesign = data.frame(
+  row.names = colnames(rawData),
+  condition = targets$Condition,
+  batch = targets$Batch)
+```
+
+Create a DESeq2 object containing this experimental design.
+```{r, warning=FALSE}
+exptObject <- DESeqDataSetFromMatrix(countData = rawData,
+                                     colData = exptDesign,
+                                     design = ~ condition + batch)
+exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
+```
+
+Run the differential analysis. This will:
+
+* normalise the data
+* correct for dispersion (variance between replicates)
+```{r}
+analysisObject = DESeq(exptObject)
+# Pull out the raw and normalised data from the analysis object.
+rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
+normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
+```
+
+Now let us compare PCAs of `rawCounts` and `normalisedCounts`:
+```{r, fig.width=7, fig.height=6}
+# Raw Uncorrected
+pca_RU_obj <- prcomp(rawCounts)
+pca_RU <- as.data.frame(pca_RU_obj[2]$rotation)
+pca_RU[,"condition"] <- targets$Condition
+pca_RU[,"batch"]     <- targets$Batch
+pca_RU[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**RAW, UNCORRECTED DATA**"
+q1 <- ggplot(data=pca_RU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
+# Raw Corrected
+corrawCounts = ComBat_seq(counts = as.matrix(rawCounts), batch = batches, group = groups)
+pca_RC_obj <- prcomp(corrawCounts)
+pca_RC <- as.data.frame(pca_RC_obj[2]$rotation)
+pca_RC[,"condition"] <- targets$Condition
+pca_RC[,"batch"]     <- targets$Batch
+pca_RC[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**RAW, CORRECTED DATA**"
+q2 <- ggplot(data=pca_RC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
+# Normalised Uncorrected
+pca_NU_obj <- prcomp(normalisedCounts)
+pca_NU <- as.data.frame(pca_NU_obj[2]$rotation)
+pca_NU[,"condition"] <- targets$Condition
+pca_NU[,"batch"]     <- targets$Batch
+pca_NU[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**RAW, UNCORRECTED DATA**"
+q3 <- ggplot(data=pca_NU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
+# Normalised Corrected
+corrnormCounts = ComBat_seq(counts = as.matrix(normalisedCounts), batch = batches, group = groups)
+pca_NC_obj <- prcomp(corrnormCounts)
+pca_NC <- as.data.frame(pca_NC_obj[2]$rotation)
+pca_NC[,"condition"] <- targets$Condition
+pca_NC[,"batch"]     <- targets$Batch
+pca_NC[,"replicate"] <- targets$Replicate
+xlab <- paste0("PC1, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
+ylab <- paste0("PC2, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
+subtitle <- "**RAW, CORRECTED DATA**"
+q4 <- ggplot(data=pca_NC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
+  geom_point(size=3) +
+  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
+  scale_colour_manual(values = cols) +
+  theme(legend.position="right",
+        plot.title=element_markdown(size=12),
+        plot.subtitle=element_markdown(size=9))
+
+grid.arrange(q1, q2, q3, q4, ncol=2, nrow=2)
+```
+the top plots are identical to using the `rawData`, but those using the `normalisedCounts` are quite different, and most importantly, cluster the controls together.
+
+# 3 Batch correction with BatchQC
+
+The first thing we need is to have the expression values as `quantile normalized`:
+```{r}
+QrawCounts <- normalize.quantiles(as.matrix(rawCounts))
+
+batchQC(dat=QrawCounts,
+        batch=targets$Batch,
+        condition=targets$Condition,
+        report_file="batchqc_report.html",
+        report_dir=".",
+        report_option_binary="111111111",
+        view_report=TRUE,
+        interactive=TRUE,
+        batchqc_output=TRUE)
+```
+
+
 
 let us see later how if we use this as the input for DESeq2, it may work better...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -216,48 +415,6 @@ The raw data is not ordered by grouping the different conditions, but by the nam
 Therefore when I upload the sample descriptions I have to order them.
 Read this file into a data.frame.
 
-```{r}
-targets <- read.table("resources/targets_batched.txt", header=TRUE, sep="\t")
-```
-
-#### Read in featureCounts for all samples
-
-```{r}
-rawData <- NULL
-# each column of rawData will contain the reads per gene of a sample
-for (sampleID in targets$sampleID) {
-  if (file.exists( paste("input/dadasc/featurecounts/",
-                         sampleID,
-                         ".featurecount", sep="") )){
-    fileContents <- read.table(paste("input/dadasc/featurecounts/",
-                                       sampleID, ".featurecount", sep=""),
-                                 sep="\t",
-                                 header=T)
-    } else {
-      fileContents <- read.table(paste("input/daoekd/featurecounts/",
-                                       sampleID, ".featurecount", sep=""),
-                                 sep="\t",
-                                 header=T)
-      }
-  rawData <- cbind(rawData, fileContents[,7])
-}
-```
-
-Add column and row names to the rawData data.frame.
-```{r}
-colnames(rawData) <- targets$sampleID
-rownames(rawData) <- fileContents$Geneid
-```
-
-#### Filtering for cpm < 1
-
-We want to remove genes with low counts _in these samples_, so we do:
-
-```{r}
-cpms <- cpm(rawData)
-keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, originally)
-rawData <- rawData[keep,]
-```
 
 #### Create a DESeq2 design matrix
 
@@ -309,9 +466,7 @@ pheatmap(vsd_cor_Object, annotation = dplyr::select(exptDesign, condition),
 ```
 
 Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
-```{r}
-analysisObject = DESeq(exptObject)
-```
+
 After fitting the model in the previous exercise, let's explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the plotDispEsts() function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions don't follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
 
 The assumptions DESeq2 makes are that the dispersions should generally decrease with increasing mean and that they should more or less follow the fitted line.
@@ -320,12 +475,6 @@ The assumptions DESeq2 makes are that the dispersions should generally decrease 
 plotDispEsts(analysisObject)
 ```
 
-Retrospectively pull out the raw and normalised data from the analysis object.
-
-```{r}
-rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
-normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
-```
 
 #### TPM values
 Then generate TPM values, using tpm() function.
