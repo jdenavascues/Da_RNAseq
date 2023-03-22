@@ -55,6 +55,14 @@ scico_palette_show(palettes = c("broc", "cork", "vik",
                                 "batlow", "roma"))
 ```
 
+# https://hbctraining.github.io/GCC-BOSC-2018/lessons/data_visualization.html
+
+
+
+
+
+
+
 # 1 Principal Components Analysis
 
 ## 1.1. PCA of the batches separately

@@ -67,6 +67,7 @@ library(UpSetR)
 library(ggthemes)        # italics in the figures
 library(ggtext)          # italics in the figures
 library(gridExtra)
+#library(ggplotify)
 # general convenience
 library(here)
 setwd(here())
@@ -156,12 +157,9 @@ keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, origi
 rawData <- rawData[keep,]
 ```
 
+# Pipeline: `DESeq2`-DGE analysis, visualisation with `limma`-based batch correction
 
-
-
-# Pipeline I: `DESeq2`-DGE analysis, visualisation with `limma`-based batch correction
-
-## IA - `DESeq2`-DGE analysis
+## `DESeq2`-DGE analysis
 
 Create an experimental design object that contains the information from `targets`:
 ```{r}
@@ -201,90 +199,154 @@ This makes sense: PC1 mostly separates *scute* overexpression from the rest, and
 
 #### Basic QC
 
-When performing quality assessment of our count data, we need to transform the normalized counts for better visualization of the variance for unsupervised clustering analyses. To assess the similarity of the samples using hierarchical heatmaps, transform the normalized counts and perform hierarchical clustering analysis.
+When performing quality assessment of our count data, we need to transform the normalized counts for better visualization of the variance for unsupervised clustering analyses. To assess the similarity of the samples using hierarchical heatmaps, transform the normalized counts and perform hierarchical clustering analysis (with hidden dendrograms)
+(I spend some time customising the plot for later, when I plot the z-scores)
 ```{r}
 # Compute the correlation values between samples of the matrix of transformed (and batch-corrected) counts
 vsd_cor_Object <- cor(assay(vsd_Object)) 
+
 # heatmap
+main.title <- '*RNAseq* sample correlations'
+## get sorted clusters
 sort_hclust <- function(x) as.hclust(dendsort(as.dendrogram(x)))
 mat_cluster_cols <- hclust(dist(t(vsd_cor_Object)))
 mat_cluster_cols <- sort_hclust(mat_cluster_cols)
 mat_cluster_rows <- hclust(dist(vsd_cor_Object))
 mat_cluster_rows <- sort_hclust(mat_cluster_rows)
-
-hm <- pheatmap(# data
-               mat            = vsd_cor_Object,
-               annotation     = dplyr::select(exptDesign, condition),
-               scale          = "none", # otherwise numbers are changed
-               cellwidth      = 15,
-               cellheight     = 15,
-               # title
-               main           = 'RNAseq sample correlations',
-               fontsize       = 14,
-               # rows
-               cluster_rows   = mat_cluster_rows,
-               treeheight_row = 25, # default is 50
-               show_rownames  = FALSE,
-               #fontsize_row   = 10,
-               cutree_rows    = 5,
-               # cols
-               cluster_cols   = mat_cluster_cols,
-               treeheight_col = 25,
-               fontsize_col   =9,
-               show_colnames  = TRUE,
-               angle_col      = 45,
-               cutree_cols    = 5,
-               # values aes
-               color          = scico(255, palette='bamako'),
-               border_color   = NA,
-               legend_breaks  = c(0, 0.5, 1),
-               #display_numbers = TRUE,
-               #fontsize_number = 5,
-               #number_color    = 'white',
-               filename       = 'RNAseq_sample_corr.png',
-               width          = 8,
-               height         = 6
-               )
-hm
+## mark the batches
+annot_batch <- data.frame(batch = ifelse(test = targets$Batch == 'a',
+                                         yes = 'batch A',
+                                         no = 'batch B'))
+rownames(annot_batch) <- rownames(vsd_cor_Object)
+## annotation labels
+ann_labels <- dplyr::select(exptDesign, condition)
+ann_labels$condition <- plyr::mapvalues(exptDesign$condition,
+                                       from=unique(exptDesign$condition),
+                                       to=c('da RNAi', 'da o/e', 'control', 'da:da o/e', 'scute o/e'))
+ann_labels$condition <- factor(ann_labels$condition, levels=c('control', 'da o/e', 'da:da o/e', 'da RNAi', 'scute o/e'))
+## annotation colours
+ann_colors = list(
+  batch = c('batch A' = RColorBrewer::brewer.pal(12, 'Paired')[2],
+            'batch B' = RColorBrewer::brewer.pal(12, 'Paired')[8]),
+  condition = c("da RNAi" = RColorBrewer::brewer.pal(12, 'Paired')[9],
+                "da o/e" = RColorBrewer::brewer.pal(12, 'Paired')[5],
+                "control" = RColorBrewer::brewer.pal(12, 'Paired')[1],
+                "da:da o/e" = RColorBrewer::brewer.pal(12, 'Paired')[6],
+                "scute o/e" = RColorBrewer::brewer.pal(12, 'Paired')[4])
+  )
+## mark the samples for ggtext
+labels_sample <- data.frame(sample=c(paste(rep('da-RNAi', 3),1:3),
+                                     paste(rep('da', 2),     1:2),
+                                     paste(rep('control', 6),rep(1:3,2)),
+                                     paste(rep('da:da', 3),  1:3),
+                                     paste(rep('scute', 3),  1:3)))
+rownames(labels_sample) <- rownames(vsd_cor_Object)
+## get minimum correlation value, rounded for the legend
+bot <- ceiling(min(vsd_cor_Object)*100)/100
 ```
 
+```{r, fig.height=6}
+hm <- pheatmap(
+  # data
+    mat               = vsd_cor_Object[mat_cluster_rows$order, mat_cluster_cols$order], # manually ordered as in clusters
+    scale             = "none", # otherwise numbers are changed
+    cellwidth         = 15,
+    cellheight        = 15,
+  # title
+    main              = main.title,
+    fontsize          = 14,
+  # rows
+    cluster_rows      = FALSE,#mat_cluster_rows,
+    #treeheight_row    = 25, # default is 50
+    #cutree_rows       = 4,
+    gaps_row          = c(6,9,12,14),
+    show_rownames     = TRUE,
+    labels_row        = labels_sample$sample[mat_cluster_rows$order],
+    fontsize_row      = 9,
+    annotation_row    = annot_batch,
+  # cols
+    cluster_cols      = FALSE,#mat_cluster_cols,
+    #treeheight_col    = 25,
+    #cutree_cols       = 4,
+    show_colnames     = TRUE,
+    labels_col        = labels_sample$sample[mat_cluster_cols$order],
+    fontsize_col      = 9,
+    angle_col         = 45,
+  # legends
+    annotation        = ann_label,
+    annotation_colors = ann_colors,
+    legend_breaks     = c(bot, bot+(1-bot)/2, 1),
+  # tiles
+    color             = scico(255, palette='bamako'),
+    border_color      = NA,
+    #display_numbers   = TRUE,
+    #fontsize_number   = 5,
+    #number_color      = 'white',
+  # save plot
+    #filename          = 'RNAseq_sample_corr.png',
+    #width             = 8,
+    #height            = 6
+  )
+hm
+```
+Note that for a 'publication' customised plot, it will probably be better to go the `ggplot2` route using [this approach](https://jcoliver.github.io/learn-r/008-ggplot-dendrograms-and-heatmaps.html) or [this one](https://stackoverflow.com/questions/36852101/r-legend-title-or-units-when-using-pheatmap).
 
+Some tips for further modifying the `pheatmap` output are [here](https://stackoverflow.com/questions/33292067/pheatmap-annotation-colors-and-border).
 
+#### Run the DGE analysis and plot dispersion estimates
 
+This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
+```{r}
+analysisObject = DESeq(exptObject)
+```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
-
-After fitting the model in the previous exercise, let's explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the plotDispEsts() function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions don't follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
+After fitting the model with the previous command, let us explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the `plotDispEsts()` function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions do not follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
 
 The assumptions DESeq2 makes are that the dispersions should generally decrease with increasing mean and that they should more or less follow the fitted line.
-
 ```{r}
 plotDispEsts(analysisObject)
 ```
 
+# FROM HERE WE CAN JUST GET THE LOG2FC FOR GSEA, AND THEN NORMALISED COUNTS/TMPS TO DO THE GENE-BASED VISUALISATIONS
+# but we do not need them for the DGE analysis, they will just be propagated for other scripts...
 
-#### TPM values
-Then generate TPM values, using tpm() function.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+This looks reasonable, so let us move on by extracting the rawCounts and the normalisedCounts:
+```{r}
+rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
+normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
+```
+
+#### Transcript Per Million counts values
+
+There are some arguments in favour of using TPM as a normalisation value, as it 'feels' a more natural measure of gene expression...
 ```{r}
 rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T)
 rawCountData <- rawDataWithLengths[,colnames(rawCounts)]
@@ -299,7 +361,7 @@ for (colName in colnames(rawCountData)) {
 tpmData <- as.data.frame(tpmData)
 colnames(tpmData) <- colnames(rawCounts)
 rownames(tpmData) <- rawDataWithLengths[,1]
-tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] # Q for Aleix: is this normalised data?????
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ]
 
 if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
     stop()
@@ -313,14 +375,14 @@ saveRDS(tpmNormalisedCounts, 'batched_counts.RDS')
 ### 2.1.1 _da_ knock-down vs control
 
 ```{r}
-conditionOne <- 'WT'
-conditionTwo <- 'KD'
+conditionOne <- 'Control'
+conditionTwo <- 'DaKD'
 ```
 
 Select the relevant column from the counts object made previously.
 Add the term “raw”, “norm” or “tpm” to each of the column headings to distinguish the column names.
 ```{r}
-conditions_sampleIDs <- targets[targets$Condition %in% c(conditionOne, conditionTwo),]$sampleID
+conditions_sampleIDs <- targets[targets$Condition %in% c(conditionOne, conditionTwo),]$sampleIDs
 slimRawCounts           <- rawCounts           %>% select(all_of(conditions_sampleIDs))
 slimNormalisedCounts    <- normalisedCounts    %>% select(all_of(conditions_sampleIDs))
 slimTpmNormalisedCounts <- tpmNormalisedCounts %>% select(all_of(conditions_sampleIDs))
@@ -356,190 +418,3 @@ Get significant genes, because we want to cluster on this behaviour
 significantGenes <- as.vector(unlist(subset(sortedFinalData_named, pvalue <= 0.05, select=c("ensemblGeneID"))))
 sigTpmNormalisedCounts <- subset(tpmNormalisedCounts, rownames(tpmNormalisedCounts) %in% significantGenes)
 ```
-
-## IB - Visualisation
-
-
-Conditions, batches and replicates are all identified in `targets`.
-Let us use PCA to visualise the similarity between samples:
-```{r}
-# calculate PC
-pca_uncorrected_obj <- prcomp(rawData)
-# pull PCA values from the object
-pca_uncorrected <- as.data.frame(pca_uncorrected_obj[2]$rotation)
-# assign labels
-pca_uncorrected[,"condition"] <- targets$Condition
-pca_uncorrected[,"batch"]     <- targets$Batch
-pca_uncorrected[,"replicate"] <- targets$Replicate
-# make plot
-cols <- c("DaKD"="#1F78B4", "DaOE"="#FF7F00", "Control"="#6A3D9A", "DaDaOE"="#E31A1C" , "ScOE"="#33A02C")
-xlab <- paste0("PC1, ",
-               round(summary(pca_uncorrected_obj)$importance["Proportion of Variance","PC1"]*100, 1),
-               " %")
-ylab <- paste0("PC2, ",
-               round(summary(pca_uncorrected_obj)$importance["Proportion of Variance","PC2"]*100, 1),
-               " %")
-title <- "PCA, *daugtherless* function RNA-seq analysis"
-subtitle <- "**RAW, UNCORRECTED DATA**"
-p1 <- ggplot(data=pca_uncorrected, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-```
-
-Perform batch correction:
-```{r, echo=FALSE, results=FALSE}
-# Transform the format of our groups and batches from names ("a", "b") to numbers (1, 2)
-# in the command below "sapply" is used to apply the "switch" command to each element and convert names to numbers as we define
-groups = sapply(as.character(targets$Condition), switch,
-                "DaKD" = 1, "DaOE" = 2, "Control" = 3, "DaDaOE" = 4, "ScOE" = 5, USE.NAMES = F)
-batches = sapply(as.character(targets$Batch), switch,
-                 "a" = 1, "b" = 2, USE.NAMES = F)
-# Run ComBat_seq
-corrected_data = ComBat_seq(counts = as.matrix(rawData), batch = batches, group = groups)
-# Join the gene IDs onto the now corrected counts from ComBat_seq
-# corrected_data = cbind(Gene=rownames(rawData), corrected_data) # no need to do this and then this will become non-numeric
-```
-
-PCA of the corrected dataset:
-```{r, fig.width=7, fig.height=3}
-# calculate PC
-pca_corrected_obj <- prcomp(corrected_data)
-# pull PCA values from the object
-pca_corrected <- as.data.frame(pca_corrected_obj[2]$rotation)
-# assign labels
-pca_corrected[,"condition"] <- targets$Condition
-pca_corrected[,"batch"]     <- targets$Batch
-pca_corrected[,"replicate"] <- targets$Replicate
-# as above, create a PCA plot for comparison to the uncorrected data
-xlab <- paste0("PC1, ",
-               round(summary(pca_corrected_obj)$importance["Proportion of Variance","PC1"]*100, 1),
-               " %")
-ylab <- paste0("PC2, ",
-               round(summary(pca_corrected_obj)$importance["Proportion of Variance","PC2"]*100, 1),
-               " %")
-subtitle <- "**RAW, BATCH-CORRECTED DATA**"
-p2 <- ggplot(data=pca_corrected, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-grid.arrange(p1, p2, ncol = 2)
-```
-
-This is not very helpful - the controls are still very far away. Maybe this would work better if DESeq2 had normalised the data first?
-
-## 2B Using DESeq2-normalised data
-
-Create experimental design object (mapping samples to conditions and batches)
-```{r}
-exptDesign = data.frame(
-  row.names = colnames(rawData),
-  condition = targets$Condition,
-  batch = targets$Batch)
-```
-
-Create a DESeq2 object containing this experimental design.
-```{r, warning=FALSE}
-exptObject <- DESeqDataSetFromMatrix(countData = rawData,
-                                     colData = exptDesign,
-                                     design = ~ condition + batch)
-exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
-```
-
-Run the differential analysis. This will:
-
-* normalise the data
-* correct for dispersion (variance between replicates)
-```{r}
-analysisObject = DESeq(exptObject)
-# Pull out the raw and normalised data from the analysis object.
-rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
-normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
-```
-
-Now let us compare PCAs of `rawCounts` and `normalisedCounts`:
-```{r, fig.width=7, fig.height=6}
-# Raw Uncorrected
-pca_RU_obj <- prcomp(rawCounts)
-pca_RU <- as.data.frame(pca_RU_obj[2]$rotation)
-pca_RU[,"condition"] <- targets$Condition
-pca_RU[,"batch"]     <- targets$Batch
-pca_RU[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**RAW, UNCORRECTED DATA**"
-q1 <- ggplot(data=pca_RU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-# Raw Corrected
-corrawCounts = ComBat_seq(counts = as.matrix(rawCounts), batch = batches, group = groups)
-pca_RC_obj <- prcomp(corrawCounts)
-pca_RC <- as.data.frame(pca_RC_obj[2]$rotation)
-pca_RC[,"condition"] <- targets$Condition
-pca_RC[,"batch"]     <- targets$Batch
-pca_RC[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_RU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**RAW, CORRECTED DATA**"
-q2 <- ggplot(data=pca_RC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-# Normalised Uncorrected
-pca_NU_obj <- prcomp(normalisedCounts)
-pca_NU <- as.data.frame(pca_NU_obj[2]$rotation)
-pca_NU[,"condition"] <- targets$Condition
-pca_NU[,"batch"]     <- targets$Batch
-pca_NU[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_NU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**NORMALISED, UNCORRECTED DATA**"
-q3 <- ggplot(data=pca_NU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-# Normalised Corrected
-corrnormCounts = ComBat_seq(counts = as.matrix(normalisedCounts), batch = batches, group = groups)
-pca_NC_obj <- prcomp(corrnormCounts)
-pca_NC <- as.data.frame(pca_NC_obj[2]$rotation)
-pca_NC[,"condition"] <- targets$Condition
-pca_NC[,"batch"]     <- targets$Batch
-pca_NC[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_NC_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**NORMALISED, CORRECTED DATA**"
-q4 <- ggplot(data=pca_NC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=3) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=12),
-        plot.subtitle=element_markdown(size=9))
-
-grid.arrange(q1, q2, q3, q4, ncol=2, nrow=2)
-```
-The top plots are identical to using the `rawData`, but those using the `normalisedCounts` are quite different, and most importantly, cluster the controls together.
-
-
-# 3 Pipeline II: `DESeq2`-DGE analysis, visualisation with `ComBat-seq`-based batch correction
-# 4 Pipeline III: `ComBat-seq`-based batch correction as input for `edgeR`-DGE analysis & visualisation
-
-Based on [this tutorial](https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/) from the [Griffith lab](https://griffithlab.org/).
-
-# 5 Conclusions
