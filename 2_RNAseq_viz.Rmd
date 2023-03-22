@@ -113,6 +113,9 @@ summary(pca)
 ```
 ### Create QC plot
 ```{r}
+
+# USE GGREPEL HERE!!!
+
 targetsB2$Condition[targetsB2$Condition=='DaDaOE'] <- '*esg>da:da*'
 targetsB2$Condition[targetsB2$Condition=='ScOE'] <- '*esg>scute*'
 targetsB2$Condition[targetsB2$Condition=='Control'] <- '*esg>*'

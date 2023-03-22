@@ -22,22 +22,6 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
-
-# START FROM SCRATCH
-# DGE ANALYSIS IS DONE WITH BATCH-CORRECTION BY DESEQ2 ALREADY
-# DO BATCH-CORRECTION USING DESEQ2 ALONE, MAYBE (ONLY MAYBE) USE COMBATSEQ_CRRECTION AS INPUT INTO DESEQ2
-# USE COMBATSEQ JUST FOR VISUALISATION IF POSSIBLE AND ONLY IF REALLY ADVANTAGEOUS OVER DESEQ2/LIMMA
-
-
-
-
-
-
-
-
-
-
-
 # 1 Getting ready
 
 We have five different conditions expressed with the _esg-Gal4_ driver, in two batches:
@@ -58,7 +42,7 @@ The target cells were labelled with UAS-GFP and FAC-sorted, RNA extracted, rever
 Importantly, the first two have their own control, while the last two have a different one, as they were made separately.
 In the first version of this script, I am doing two separate analyses, but because eventually I will need to show all the data together, batch-correction will be required, which is what I will do here.
 
-```{r, echo=FALSE, warning=FALSE, results=FALSE}
+```{r, include=FALSE}
 # DGE analysis
 library(DESeq2)          # to normalise RNAseq count data and perform DEG analysis
 # general bioinformatics
@@ -72,21 +56,25 @@ library(BatchQC)
 library(preprocessCore)
 # library(limma)
 # plotting and data tidying
-library(ggplot2)         # for making QC plots
+library(ggplot2)         # for making plots
 library(dplyr)           # for handling data frames
 library(stringr)         # for handling strings
 library(pheatmap)        # to plot heatmap
+library(scico)           # for vik colour map
+library(dendsort)        # to sort dendrograms
 library(gridExtra)
 library(UpSetR)
-library(ggthemes) # italics in the figures
-library(ggtext) # italics in the figures
+library(ggthemes)        # italics in the figures
+library(ggtext)          # italics in the figures
 library(gridExtra)
 # general convenience
 library(here)
 setwd(here())
 ```
 
-TPM function (we'll need it later)
+#### Some functions used later
+
+Calculate Transcripts Per Million counts:
 ```{r}
 tpm <- function(counts, lengths) {
   return ((counts * 1e6) / (lengths * sum(counts/lengths,na.rm=TRUE)))
@@ -168,12 +156,209 @@ keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples (out of 6, origi
 rawData <- rawData[keep,]
 ```
 
-# 2 Batch correction with ComBat-seq
 
-## 2A Using raw count data
 
-Based on this tutorial:
-https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/
+
+# Pipeline I: `DESeq2`-DGE analysis, visualisation with `limma`-based batch correction
+
+## IA - `DESeq2`-DGE analysis
+
+Create an experimental design object that contains the information from `targets`:
+```{r}
+exptDesign = data.frame(
+  row.names = colnames(rawData),
+  condition = targets$Condition,
+  batch = targets$Batch)
+```
+
+Create `DESeq2DataSet` object containing this experimental design and rawData:
+```{r, warning=FALSE}
+exptObject <- DESeqDataSetFromMatrix(countData = rawData,
+                                     colData = exptDesign,
+                                     design = ~ batch + condition) 
+
+exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
+```
+`condition` needs to be last in the formula (see [here](http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#differential-expression-analysis) why).
+
+#### Quick visualisation
+
+Transform the normalized counts and plot them as PCA:
+```{r}
+vsd_Object <- vst(exptObject, blind=TRUE)
+plotPCA(vsd_Object)
+```
+
+Remove batch effect and re-plot:
+```{r}
+assay(vsd_Object) <- limma::removeBatchEffect( assay(vsd_Object),
+                                               batch=vsd_Object$batch,
+                                               design=model.matrix(~condition, colData(vsd_Object)) )
+plotPCA(vsd_Object)
+```
+
+This makes sense: PC1 mostly separates *scute* overexpression from the rest, and PC2 dominates the effect of knocking-down or overexpressing *daughterless* (or the *da:da* variant).
+
+#### Basic QC
+
+When performing quality assessment of our count data, we need to transform the normalized counts for better visualization of the variance for unsupervised clustering analyses. To assess the similarity of the samples using hierarchical heatmaps, transform the normalized counts and perform hierarchical clustering analysis.
+```{r}
+# Compute the correlation values between samples of the matrix of transformed (and batch-corrected) counts
+vsd_cor_Object <- cor(assay(vsd_Object)) 
+# heatmap
+sort_hclust <- function(x) as.hclust(dendsort(as.dendrogram(x)))
+mat_cluster_cols <- hclust(dist(t(vsd_cor_Object)))
+mat_cluster_cols <- sort_hclust(mat_cluster_cols)
+mat_cluster_rows <- hclust(dist(vsd_cor_Object))
+mat_cluster_rows <- sort_hclust(mat_cluster_rows)
+
+hm <- pheatmap(# data
+               mat            = vsd_cor_Object,
+               annotation     = dplyr::select(exptDesign, condition),
+               scale          = "none", # otherwise numbers are changed
+               cellwidth      = 15,
+               cellheight     = 15,
+               # title
+               main           = 'RNAseq sample correlations',
+               fontsize       = 14,
+               # rows
+               cluster_rows   = mat_cluster_rows,
+               treeheight_row = 25, # default is 50
+               show_rownames  = FALSE,
+               #fontsize_row   = 10,
+               cutree_rows    = 5,
+               # cols
+               cluster_cols   = mat_cluster_cols,
+               treeheight_col = 25,
+               fontsize_col   =9,
+               show_colnames  = TRUE,
+               angle_col      = 45,
+               cutree_cols    = 5,
+               # values aes
+               color          = scico(255, palette='bamako'),
+               border_color   = NA,
+               legend_breaks  = c(0, 0.5, 1),
+               #display_numbers = TRUE,
+               #fontsize_number = 5,
+               #number_color    = 'white',
+               filename       = 'RNAseq_sample_corr.png',
+               width          = 8,
+               height         = 6
+               )
+hm
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
+
+After fitting the model in the previous exercise, let's explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the plotDispEsts() function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions don't follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
+
+The assumptions DESeq2 makes are that the dispersions should generally decrease with increasing mean and that they should more or less follow the fitted line.
+
+```{r}
+plotDispEsts(analysisObject)
+```
+
+
+#### TPM values
+Then generate TPM values, using tpm() function.
+```{r}
+rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T)
+rawCountData <- rawDataWithLengths[,colnames(rawCounts)]
+rownames(rawCountData) <- rawDataWithLengths[,1]
+
+tpmData <- NULL
+
+for (colName in colnames(rawCountData)) {
+    tpmData <- cbind(tpmData, tpm(rawDataWithLengths[,colName], rawDataWithLengths$max.tx_len))
+}
+
+tpmData <- as.data.frame(tpmData)
+colnames(tpmData) <- colnames(rawCounts)
+rownames(tpmData) <- rawDataWithLengths[,1]
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] # Q for Aleix: is this normalised data?????
+
+if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
+    stop()
+}
+if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
+    stop()
+}
+saveRDS(tpmNormalisedCounts, 'batched_counts.RDS')
+```
+
+### 2.1.1 _da_ knock-down vs control
+
+```{r}
+conditionOne <- 'WT'
+conditionTwo <- 'KD'
+```
+
+Select the relevant column from the counts object made previously.
+Add the term “raw”, “norm” or “tpm” to each of the column headings to distinguish the column names.
+```{r}
+conditions_sampleIDs <- targets[targets$Condition %in% c(conditionOne, conditionTwo),]$sampleID
+slimRawCounts           <- rawCounts           %>% select(all_of(conditions_sampleIDs))
+slimNormalisedCounts    <- normalisedCounts    %>% select(all_of(conditions_sampleIDs))
+slimTpmNormalisedCounts <- tpmNormalisedCounts %>% select(all_of(conditions_sampleIDs))
+
+colnames(slimRawCounts)           <- paste("raw", conditions_sampleIDs, sep=".")
+colnames(slimNormalisedCounts)    <- paste("norm", conditions_sampleIDs, sep=".")
+colnames(slimTpmNormalisedCounts) <- paste("tpm", conditions_sampleIDs, sep=".")
+```
+
+Create the comparison between the 2 conditions.
+Create a data.frame containing all the count and DEdata, and sorted by the pvalue column, with the most significant genes at the top of the data.frame.
+```{r}
+deData <- as.data.frame(results(analysisObject, contrast=c("condition", conditionOne, conditionTwo), pAdjustMethod="BH"))
+finalData <- cbind(rownames(deData), slimRawCounts, slimNormalisedCounts, slimTpmNormalisedCounts, deData)
+colnames(finalData)[1] <- "ensemblGeneID"
+```
+
+Sort data and give genes their names
+```{r}
+sortedFinalData <- finalData[order(finalData$pvalue), ] 
+sortedFinalData_named <- merge(sortedFinalData, dlist, by=0)
+sortedFinalData_named <- sortedFinalData_named[,-1]
+```
+
+Write this data to a file under output/
+```{r}
+write.table(sortedFinalData, file=paste("output/batched/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+saveRDS(sortedFinalData_named, paste(conditionOne, "_vs_", conditionTwo, ".RDS", sep="") )
+```
+
+Get significant genes, because we want to cluster on this behaviour
+```{r}
+significantGenes <- as.vector(unlist(subset(sortedFinalData_named, pvalue <= 0.05, select=c("ensemblGeneID"))))
+sigTpmNormalisedCounts <- subset(tpmNormalisedCounts, rownames(tpmNormalisedCounts) %in% significantGenes)
+```
+
+## IB - Visualisation
+
 
 Conditions, batches and replicates are all identified in `targets`.
 Let us use PCA to visualise the similarity between samples:
@@ -351,298 +536,10 @@ grid.arrange(q1, q2, q3, q4, ncol=2, nrow=2)
 ```
 The top plots are identical to using the `rawData`, but those using the `normalisedCounts` are quite different, and most importantly, cluster the controls together.
 
-# 3 Batch correction with BatchQC
 
-The first thing we need is to have the expression values as `quantile normalized`:
-```{r echo=FALSE, warning=FALSE, results=FALSE}
-QrawCounts <- normalize.quantiles(as.matrix(rawCounts))
-QnormalisedCounts <- normalize.quantiles(as.matrix(normalisedCounts))
-```
+# 3 Pipeline II: `DESeq2`-DGE analysis, visualisation with `ComBat-seq`-based batch correction
+# 4 Pipeline III: `ComBat-seq`-based batch correction as input for `edgeR`-DGE analysis & visualisation
 
-Now we can use the interactive `batchQC` mode to see the effect of applying batch correction using ComBat or SVA on either normalised or raw data:
-```{r echo=FALSE, warning=FALSE, results=FALSE}
-batchQC(
-        dat=QrawCounts,
-        #dat=QnormalisedCounts,
-        batch=targets$Batch,
-        condition=targets$Condition,
-        report_file="batchqc_report_raw.html",
-        #report_file="batchqc_report_norm.html",
-        report_dir=".",
-        report_option_binary="111111111",
-        view_report=TRUE,
-        interactive=TRUE,
-        batchqc_output=TRUE)
-```
+Based on [this tutorial](https://rnabio.org/module-03-expression/0003/05/01/Batch-Correction/) from the [Griffith lab](https://griffithlab.org/).
 
-The results from applying `ComBat-seq` (or `sva` too) to the `QnormalisedCounts` are great, with controls from both batches collapsing into a single cluster.
-
-Why is this different than what I get by applying `ComBat-seq` directly to the data?
-Maybe I need to use the quantile-normalised data? (this is required for `BatchQC` but I did not do it for the DESeq2-normalised data)
-However, if I try to get these outside the interactive environment of `BatchQC`, I can't:
-```{r echo=FALSE, warning=FALSE, fig.width=7, fig.height=3}
-# Quantile Normalised Uncorrected
-pca_QNU_obj <- prcomp(QnormalisedCounts)
-pca_QNU <- as.data.frame(pca_QNU_obj[2]$rotation)
-pca_QNU[,"condition"] <- targets$Condition
-pca_QNU[,"batch"]     <- targets$Batch
-pca_QNU[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_QNU_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_QNU_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**Q-NORMALISED, UNCORRECTED DATA**"
-r1 <- ggplot(data=pca_QNU, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=2) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=10),
-        plot.subtitle=element_markdown(size=7))
-# Normalised Corrected
-corrQnormCounts = ComBat_seq(counts = as.matrix(QnormalisedCounts),
-                             batch = batches, group = groups)
-pca_QNC_obj <- prcomp(corrQnormCounts)
-pca_QNC <- as.data.frame(pca_QNC_obj[2]$rotation)
-pca_QNC[,"condition"] <- targets$Condition
-pca_QNC[,"batch"]     <- targets$Batch
-pca_QNC[,"replicate"] <- targets$Replicate
-xlab <- paste0("PC1, ", round(summary(pca_QNC_obj)$importance["Proportion of Variance","PC1"]*100, 1), " %")
-ylab <- paste0("PC2, ", round(summary(pca_QNC_obj)$importance["Proportion of Variance","PC2"]*100, 1), " %")
-subtitle <- "**Q-NORMALISED, BATCH-CORRECTED DATA (COMBAT)**"
-r2 <- ggplot(data=pca_QNC, aes(x=PC1, y=PC2, color=condition, shape=batch)) +
-  geom_point(size=2) +
-  labs(title=title, subtitle=subtitle, x=xlab, y=ylab) +
-  scale_colour_manual(values = cols) +
-  theme(legend.position="right",
-        plot.title=element_markdown(size=10),
-        plot.subtitle=element_markdown(size=7))
-
-grid.arrange(r1, r2, ncol=2)
-```
-
-Maybe this is because the DESeq data was normalised with all the batches together?
-It seems logical that the normalisation should be done separately (however, DESeq2 can deal with batches, so it does not look like this is essential)
-
-
-
-
-let us see later how if we use this as the input for DESeq2, it may work better...
-
-
-# 4 Batch correction with Surrogate Variable Analysis
-
-```{r}
-library(bladderbatch)
-data(bladderdata)
-library(pamr)
-library(limma)
-targets_trim <- targets[,c(1,4,5)]
-names(targets_trim) <- c('sample', 'condition', 'batch')
-rownames(targets_trim) <- names(normalisedCounts)
-targets_trim$sample <- 1:nrow(targets_trim)
-targets_trim <- targets_trim %>% mutate(
-  batch=purrr::set_names(1:2, c('a', 'b'))[batch]
-  )
-# apply(normalisedCounts, 2, function(x) anyNA(x)) # checks there are no NAs in the dataframe.
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 2 DGE analysis
-
-## 2.1 _daughterless_ overexpression and knockdown
-
-We are now ready to read‐in the sample descriptions for the gene expression analysis. 
-We need to define our conditions in the context of the biological replicates we have.
-The raw data is not ordered by grouping the different conditions, but by the name of the experiment.
-Therefore when I upload the sample descriptions I have to order them.
-Read this file into a data.frame.
-
-
-#### Create a DESeq2 design matrix
-
-To run DESeq2 (following the DeSEq2 analysis guide in bioconductor), we need to create an experimental design object (sample ID to treatment mapping).
-```{r}
-exptDesign = data.frame(
-  row.names = colnames(rawData),
-  condition = targets$Condition,
-  batch = targets$Batch)
-```
-
-#### Create a DeSEQ2 experimental object
-
-Build a DESeq2 object containing this experimental design and rawData.
-```{r, warning=FALSE}
-exptObject <- DESeqDataSetFromMatrix(countData = rawData,
-                                     colData = exptDesign,
-                                     # the functions will look at the last variable:
-                                     # https://support.bioconductor.org/p/121408/
-                                     design = ~ batch + condition) 
-
-exptObject$condition <- factor(exptObject$condition, levels = c("Control", "DaKD", "DaOE", "DaDaOE", "ScOE"))
-```
-
-#### Batch correction
-
-```{r}
-# Transform the normalized counts 
-vsd_Object <- vst(exptObject, blind=TRUE)
-plotPCA(vsd_Object)
-```
-
-Remove batch effect and re-plot:
-```{r}
-assay(vsd_Object) <- limma::removeBatchEffect(assay(vsd_Object), vsd_Object$batch) # do this just for plotting
-plotPCA(vsd_Object)
-```
-
-This makes better sense, though it seems that the effect of the KD is small and the batch effects are large enough that the controls can't group together.
-
-#### Basic QC and DGE analysis
-When performing quality assessment of our count data, we need to transform the normalized counts for better visualization of the variance for unsupervised clustering analyses. To assess the similarity of the samples using hierarchical heatmaps, transform the normalized counts and perform hierarchical clustering analysis.
-```{r}
-# Extract the matrix of transformed counts
-vsd_mat_Object <- assay(vsd_Object)
-# Compute the correlation values between samples
-vsd_cor_Object <- cor(vsd_mat_Object) 
-# Plot the heatmap
-pheatmap(vsd_cor_Object, annotation = dplyr::select(exptDesign, condition),
-         cluster_rows=FALSE, cluster_cols=FALSE)
-
-# pheatmap(norm_OEsig[2:7], 
-#     color = heat_colors, 
-#     cluster_rows = T, 
-#     show_rownames = F,
-#     annotation = meta, 
-#     border_color = NA, 
-#     fontsize = 10, 
-#     scale = "row", 
-#     fontsize_row = 10, 
-#     height = 20)
-```
-
-Run the differential analysis. This will normalise the data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
-
-After fitting the model in the previous exercise, let's explore the fit of our data to the negative binomial model by plotting the dispersion estimates using the plotDispEsts() function. Remember that the dispersion estimates are used to model the raw counts; if the dispersions don't follow the assumptions made by DESeq2, then the variation in the data could be poorly estimated and the DE results could be less accurate.
-
-The assumptions DESeq2 makes are that the dispersions should generally decrease with increasing mean and that they should more or less follow the fitted line.
-
-```{r}
-plotDispEsts(analysisObject)
-```
-
-
-#### TPM values
-Then generate TPM values, using tpm() function.
-```{r}
-rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T)
-rawCountData <- rawDataWithLengths[,colnames(rawCounts)]
-rownames(rawCountData) <- rawDataWithLengths[,1]
-
-tpmData <- NULL
-
-for (colName in colnames(rawCountData)) {
-    tpmData <- cbind(tpmData, tpm(rawDataWithLengths[,colName], rawDataWithLengths$max.tx_len))
-}
-
-tpmData <- as.data.frame(tpmData)
-colnames(tpmData) <- colnames(rawCounts)
-rownames(tpmData) <- rawDataWithLengths[,1]
-tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] # Q for Aleix: is this normalised data?????
-
-if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
-    stop()
-}
-if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
-    stop()
-}
-saveRDS(tpmNormalisedCounts, 'batched_counts.RDS')
-```
-
-### 2.1.1 _da_ knock-down vs control
-
-```{r}
-conditionOne <- 'WT'
-conditionTwo <- 'KD'
-```
-
-Select the relevant column from the counts object made previously.
-Add the term “raw”, “norm” or “tpm” to each of the column headings to distinguish the column names.
-```{r}
-conditions_sampleIDs <- targets[targets$Condition %in% c(conditionOne, conditionTwo),]$sampleID
-slimRawCounts           <- rawCounts           %>% select(all_of(conditions_sampleIDs))
-slimNormalisedCounts    <- normalisedCounts    %>% select(all_of(conditions_sampleIDs))
-slimTpmNormalisedCounts <- tpmNormalisedCounts %>% select(all_of(conditions_sampleIDs))
-
-colnames(slimRawCounts)           <- paste("raw", conditions_sampleIDs, sep=".")
-colnames(slimNormalisedCounts)    <- paste("norm", conditions_sampleIDs, sep=".")
-colnames(slimTpmNormalisedCounts) <- paste("tpm", conditions_sampleIDs, sep=".")
-```
-
-Create the comparison between the 2 conditions.
-Create a data.frame containing all the count and DEdata, and sorted by the pvalue column, with the most significant genes at the top of the data.frame.
-```{r}
-deData <- as.data.frame(results(analysisObject, contrast=c("condition", conditionOne, conditionTwo), pAdjustMethod="BH"))
-finalData <- cbind(rownames(deData), slimRawCounts, slimNormalisedCounts, slimTpmNormalisedCounts, deData)
-colnames(finalData)[1] <- "ensemblGeneID"
-```
-
-Sort data and give genes their names
-```{r}
-sortedFinalData <- finalData[order(finalData$pvalue), ] 
-sortedFinalData_named <- merge(sortedFinalData, dlist, by=0)
-sortedFinalData_named <- sortedFinalData_named[,-1]
-```
-
-Write this data to a file under output/
-```{r}
-write.table(sortedFinalData, file=paste("output/batched/differential_expression/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
-saveRDS(sortedFinalData_named, paste(conditionOne, "_vs_", conditionTwo, ".RDS", sep="") )
-```
-
-Get significant genes, because we want to cluster on this behaviour
-```{r}
-significantGenes <- as.vector(unlist(subset(sortedFinalData_named, pvalue <= 0.05, select=c("ensemblGeneID"))))
-sigTpmNormalisedCounts <- subset(tpmNormalisedCounts, rownames(tpmNormalisedCounts) %in% significantGenes)
-```
+# 5 Conclusions
