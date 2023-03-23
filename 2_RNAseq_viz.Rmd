@@ -22,38 +22,29 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
-# 0 Getting ready
+```{r, include=FALSE}
+# data
+library(tibble)
+# graphics
+library(ggplot2)
+library(ggthemes)       # italics in the figures
+library(ggtext)         # italics in the figures
+library(pheatmap)       # pretty heatmap
+library(scico)          # scientific colormaps
+library(ggrepel)        # to avoid overlapping text
+# convenience
+library(here);
+setwd(here())
+```
 
-We have 4 different conditions expressed with the _esg-Gal4_ driver:
-
-* in batch one:
-  
-  * _UAS-daughterless_ (_da_)
-  * _UAS-da^RNAi^_ (TRiP-line, either JF02488 or JF02092)
-  * and their control
-
-* in batch two:
-
-  * _UAS-da:da_
-  * _UAS-scute_
-  * and their control
+# 1 Heatmap of clustered samples and genes
 
 We have their "transcripts per million" (tpm) in different RDS files.
+```{r}
 
-```{r, include=FALSE}
-library(ggplot2)
-library(ggthemes) # italics in the figures
-library(ggtext) # italics in the figures
-library(pheatmap)        # to plot heatmap
-library(tibble)
-library(here); setwd(here())
-
-#devtools::install_github("thomasp85/scico")
-library(scico)
-scico_palette_show(palettes = c("broc", "cork", "vik",
-                                "lisbon", "tofino", "berlin",
-                                "batlow", "roma"))
 ```
+
+
 
 # https://hbctraining.github.io/GCC-BOSC-2018/lessons/data_visualization.html
 
@@ -72,34 +63,128 @@ scico_palette_show(palettes = c("broc", "cork", "vik",
 Include the whole dataset (as opposed to only the genes with significant DE).
 ```{r}
 # get the data (fresh session)
-targetsB1 <- read.table("resources/targets_daoekd.txt", header=TRUE, sep="\t")
-tpmNormalisedCountsB1 <- readRDS('daoekd_counts.RDS')
+targets <- readRDS('output/targets.RDS')
+tpmNormalisedCounts <- readRDS('output/tpmNormalisedCounts.RDS')
 # remove all rows that have no variance
-tpmNormalisedCountsB1_pca <- tpmNormalisedCountsB1[
-  rowSums(tpmNormalisedCountsB1[-1] != tpmNormalisedCountsB1[[2]], na.rm = TRUE) != 0,
-  ]
+tpmNormalisedCounts_pca <- tpmNormalisedCounts[
+  rowSums(tpmNormalisedCounts[-1] != tpmNormalisedCounts[[2]], na.rm = TRUE) != 0, ]
+# same for the other count datasets
+normalisedCounts <- readRDS('output/normalisedCounts.RDS')
+normalisedCounts_pca <- normalisedCounts[
+  rowSums(normalisedCounts[-1] != normalisedCounts[[2]], na.rm = TRUE) != 0, ]
+rawCounts <- readRDS('output/rawCounts.RDS')
+rawCounts_pca <- rawCounts[
+  rowSums(rawCounts[-1] != rawCounts[[2]], na.rm = TRUE) != 0, ]
+
 ```
 
 ### PCA object
 ```{r}
-pca <- prcomp(t(tpmNormalisedCountsB1_pca), center=TRUE, scale=TRUE)
-scores <- data.frame(targetsB1$sampleID, pca$x[,1:2])
+pca <- prcomp(t(tpmNormalisedCounts_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
 summary(pca)
 ```
 ### Create QC plot
 ```{r}
-targetsB1$Condition[targetsB1$Condition=='DaOE'] <- '*esg>da*'
-targetsB1$Condition[targetsB1$Condition=='DaKD'] <- '*esg>da^RNAi^*'
-targetsB1$Condition[targetsB1$Condition=='Control'] <- '*esg>*'
-
 ggplot(scores,
-       aes(x = PC1, y = PC2, label=factor(targetsB1$sampleID), colour=factor(targetsB1$Condition) )
+       aes(x = PC1, y = PC2, label=factor(targets$sampleIDs), colour=factor(targets$condition_md) )
        ) +
-  geom_point(size=3) + 
-  geom_text(size=3, hjust=0.5, vjust=-1) +
+  geom_point(size=4) +
+  geom_point(size=2, colour='white', alpha=0.8) + 
+  geom_text_repel(size=4, max.overlaps=Inf, 
+                  force_pull = -0.03, seed=42,
+                  box.padding = 0.5,
+                  point.padding = 0.5) +
   scale_colour_discrete(name="condition") +
+  theme_bw() +
+  lims(x= c(-115, 175), y = c(-70, 70)) +
   theme(legend.text=element_markdown(size=9))
 ```
+
+```{r}
+pca <- prcomp(t(normalisedCounts_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
+ggplot(scores,
+       aes(x = PC1, y = PC2, label=factor(targets$sampleIDs), colour=factor(targets$condition_md) )
+       ) +
+  geom_point(size=4) +
+  geom_point(size=2, colour='white', alpha=0.8) + 
+  geom_text_repel(size=4, max.overlaps=Inf, 
+                  force_pull = -0.03, seed=42,
+                  box.padding = 0.5,
+                  point.padding = 0.5) +
+  scale_colour_discrete(name="condition") +
+  theme_bw() +
+  theme(legend.text=element_markdown(size=9))
+```
+```{r}
+pca <- prcomp(t(rawCounts_pca), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
+ggplot(scores,
+       aes(x = PC1, y = PC2, label=factor(targets$sampleIDs), colour=factor(targets$condition_md) )
+       ) +
+  geom_point(size=4) +
+  geom_point(size=2, colour='white', alpha=0.8) + 
+  geom_text_repel(size=4, max.overlaps=Inf, 
+                  force_pull = -0.03, seed=42,
+                  box.padding = 0.5,
+                  point.padding = 0.5) +
+  scale_colour_discrete(name="condition") +
+  theme_bw() +
+  theme(legend.text=element_markdown(size=9))
+```
+
+
+
+ok, what have I learned so far:
+- the batch correction is applied only, apparently, to the PSEUDOCOUNT data normalised with VST (vsd) variance stabilizing transformation (which should be run with blind=FALSE!!!!)
+- this can be used directly (in principle) for heamapping, as it reduces the variance.
+- so if we try to do TPM (not batch-corrected), z-transform, and heat mapping, we may be displaying mostly batch effects
+things to test:
+- try heatmap of TPM z-scores anyway.
+- re-do the VST transform with blind=FALSE for the definitive PCA plots
+- try the limma::removeBatchEffect command directly on the TPM data (log2 transformed!), then re-transform into TPM, z-score, plot.
+  Repeat this with normalised counts.
+  I wonder what is the point of using TPM and not simply pseudocounts after all these transformations.
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### 1.1.2 _da:da_ and _scute_ overexpression
 
