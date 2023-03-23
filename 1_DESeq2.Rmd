@@ -43,7 +43,7 @@ In the first version of this script, I am doing two separate analyses, but becau
 # bioinformatics
 library(DESeq2)
 library(biomaRt)         # to annotate the final gene list with common gene names
-library(rtracklayer)     # to handling gene/exon coordinates data
+library(rtracklayer)     # import function for GRanges
 library(GenomicFeatures) # to handling gene/exon coordinates data
 # data / plotting
 library(ggplot2)
@@ -53,6 +53,7 @@ library(pheatmap)        # pretty heatmaps
 library(scico)           # scientific colour maps
 library(dendsort)        # sort dendrograms
 # convenience
+#library(readr)           # to unzip (redundant with utils?)
 library(writexl)
 library(here)
 setwd(here())
@@ -75,8 +76,8 @@ Use the unique() function to get a vector of all gene IDs.
 Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
 
 ```{r include=FALSE, warning=FALSE}
-txdb <- makeTxDbFromGRanges(import('resources/Drosophila_melanogaster.BDGP6.28.101.gtf'))
-                                            # same release as the one used for mapping
+gtf <- 'Drosophila_melanogaster.BDGP6.28.101.gtf' # same release as the one used for mapping
+txdb <- makeTxDbFromGRanges( import( unzip(paste0('resources/', gtf, '.zip'), gtf) ) )
 allTranscripts <- transcriptLengths(txdb)
 allGeneIDs <- unique(allTranscripts$gene_id)
 allGeneLengths <- as.data.frame(allTranscripts %>%
