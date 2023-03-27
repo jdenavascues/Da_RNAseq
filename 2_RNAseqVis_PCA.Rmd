@@ -22,21 +22,20 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
-```{r, include=FALSE}
+**Libraries needed:**
+
+Installed, not loaded: `svglite`, `limma`, `matrixStats`.
+
+Loaded:
+```{r, warning=FALSE, echo=FALSE}
 # data
 library(tibble)
-# library(dplyr)
-# library(purrr)
-# library(genefilter)
+library(DESeq2)         # to handle VSD object
 # graphics
-library(ggplot2)
+library(ggplot2)        # package 'svglite' needs be installed
 library(ggthemes)       # italics in the figures
 library(ggtext)         # italics in the figures
-library(pheatmap)       # pretty heatmap
-library(scico)          # scientific colormaps
 library(ggrepel)        # to avoid overlapping text
-library(pheatmap)
-library(cetcolor)       # Peter Kovesi's perceptually uniform colour maps
 # convenience
 library(here);
 setwd(here())
@@ -227,7 +226,7 @@ vsd <- readRDS('output/vst_pseudocounts.RDS')
 # remove rows with very little variability
 # vsd_pca <- assay(vsd)[
 #   rowSums(rawCounts[-1] != rawCounts[[2]], na.rm = TRUE) != 0, ]
-var_vsd <- rowVars(assay(vsd), rm.na=TRUE)
+var_vsd <- matrixStats::rowVars(assay(vsd), rm.na=TRUE)
 #var_rawCounts <- var_rawCounts [ var_rawCounts < max(var_rawCounts) ]
 avg_vsd <- rowMeans(assay(vsd))
 #avg_rawCounts <- avg_rawCounts [ avg_rawCounts < max(avg_rawCounts) ]
@@ -370,6 +369,7 @@ Let us say we want to stubbornly stick to 'real-world' measurements (e.g. tpms).
 We can do batch correction using `limma` on `tpmNormalisedCounts`, provided these are in log form.
 So we do:
 ```{r}
+
 # min(tpmNormalisedCounts) is 0 so we need to add 1 for log transform
 tpm_log_bcorr <- limma::removeBatchEffect(
   log2(tpmNormalisedCounts+1),

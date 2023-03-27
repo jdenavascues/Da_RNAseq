@@ -75,7 +75,7 @@ Export the transcript lengths for all of the transcripts, from this object.
 Use the unique() function to get a vector of all gene IDs.
 Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
 
-```{r include=FALSE, warning=FALSE}
+```{r, echo=FALSE, warning=FALSE}
 gtf <- 'Drosophila_melanogaster.BDGP6.28.101.gtf' # same release as the one used for mapping
 zipfile <- paste0('resources/', gtf, '.zip')
 txdb <- makeTxDbFromGRanges( import( unzip(zipfile, gtf) ) )
@@ -321,8 +321,8 @@ All seems fine, so we can store these data. For visualisation:
 ```{r}
 # for downstream use
 saveRDS(rawCounts, 'output/rawCounts.RDS')
-# saveRDS(normalisedCounts, 'output/normalisedCounts.RDS')
-# saveRDS(tpmNormalisedCounts, 'output/tpmNormalisedCounts.RDS')
+saveRDS(normalisedCounts, 'output/normalisedCounts.RDS')
+saveRDS(tpmNormalisedCounts, 'output/tpmNormalisedCounts.RDS')
 ```
 
 #### Save DGE data

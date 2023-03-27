@@ -51,9 +51,9 @@ library(biomaRt)         # to annotate the final gene list with common gene name
 library(rtracklayer)     # to handling gene/exon coordinates data
 library(GenomicFeatures) # to handling gene/exon coordinates data
 # batch correction
-library(sva) # >= v3.36.0
-library(BatchQC)
-library(preprocessCore)
+#library(sva) # >= v3.36.0
+#library(BatchQC)
+#library(preprocessCore)
 # library(limma)
 # plotting and data tidying
 library(ggplot2)         # for making plots
@@ -89,13 +89,13 @@ Export the transcript lengths for all of the transcripts, from this object.
 Use the unique() function to get a vector of all gene IDs.
 Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
 
-```{r include=FALSE, warning=FALSE}
-txdb <- makeTxDbFromGRanges(import('resources/dmel-all-r6.50.gtf'))
-
+```{r, echo=FALSE, warning=FALSE}
+gtf <- 'Drosophila_melanogaster.BDGP6.28.101.gtf' # same release as the one used for mapping
+zipfile <- paste0('resources/', gtf, '.zip')
+txdb <- makeTxDbFromGRanges( import( unzip(zipfile, gtf) ) )
+unlink(gtf) # cleanup - delete uncompressed file
 allTranscripts <- transcriptLengths(txdb)
-
 allGeneIDs <- unique(allTranscripts$gene_id)
-
 allGeneLengths <- as.data.frame(allTranscripts %>%
   group_by(gene_id) %>%
   summarize(max.tx_len = max(tx_len)) )
@@ -108,40 +108,38 @@ Genes are now identified as FlyBase IDs (e.g. FBgn0031208). To get the gene name
 ```{r}
 ensembl = useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
                      dataset="dmelanogaster_gene_ensembl",
-                     host = "https://oct2022.archive.ensembl.org") # update this to the latest: https://www.ensembl.org/Help/ArchiveRedirect
+                     host = "https://oct2022.archive.ensembl.org")
+                     # to update this: https://www.ensembl.org/Help/ArchiveRedirect
 filters = listFilters(ensembl) # It defines filters in case you have a specific query
 attributes = listAttributes(ensembl) #Defines the features that will be showed
 
 dlist <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ensembl)
 rownames(dlist) <- dlist$ensembl_gene_id
 dlist[1] <- NULL
-write.table(dlist, file="resources/gene_names.txt", col.names=NA)
+names(dlist) <- 'gene_symbol'
 ```
 
 #### Load raw data
 
 Read in featureCounts for all samples:
 ```{r}
-targets <- read.table("resources/targets_batched.txt", header=TRUE, sep="\t")
+targets <- read.table("input/targets.txt", header=TRUE, sep="\t")
+zipfiles <- unzip("input/featurecounts.zip",list=TRUE)
+fcountf <- zipfiles$Name[ grepl('.featurecount$', zipfiles$Name) &
+                          !(grepl('^_', zipfiles$Name) )]
 
 rawData <- NULL
 # each column of rawData will contain the reads per gene of a sample
-for (sampleID in targets$sampleID) {
-  if (file.exists( paste("input/dadasc/featurecounts/",
-                         sampleID,
-                         ".featurecount", sep="") )){
-    fileContents <- read.table(paste("input/dadasc/featurecounts/",
-                                       sampleID, ".featurecount", sep=""),
-                                 sep="\t",
-                                 header=T)
-    } else {
-      fileContents <- read.table(paste("input/daoekd/featurecounts/",
-                                       sampleID, ".featurecount", sep=""),
-                                 sep="\t",
-                                 header=T)
-      }
+counter <- 0
+for (fcf in targets$File) {
+  if (fcf %in% fcountf) {
+    fileContents <- read.table(unzip("input/featurecounts.zip", file=fcf), sep="\t", header=T)
+
+    } else { counter <- counter + 1 }
   rawData <- cbind(rawData, fileContents[,7])
 }
+if (counter>0) {cat("There is/are ", counter, ' missing featureCount file(s) in the zipped directory')}
+unlink('*.featurecount') # cleanup - delete uncompressed files
 ```
 
 Add column and row names to the rawData matrix
@@ -273,7 +271,7 @@ hm <- pheatmap(
     fontsize_col      = 9,
     angle_col         = 45,
   # legends
-    annotation        = ann_label,
+    annotation        = ann_labels,
     annotation_colors = ann_colors,
     legend_breaks     = c(bot, bot+(1-bot)/2, 1),
   # tiles
