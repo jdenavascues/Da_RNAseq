@@ -70,6 +70,9 @@ col.pal <- cet_pal(n = 256, name = "cbd1", alpha = 1)
 n_max <- max(fold_in_set)
 n_min <- min(fold_in_set)
 
+# define metrics for clustering
+dcols1 <- "manhattan"
+
 if (n_max > abs(n_min)) {max = n_max} else {max = abs(n_min)}
 
 breaksList = seq((-max), max, by=(2*max/256))

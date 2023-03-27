@@ -1,0 +1,24 @@
+---
+title: "5_PCA"
+author: "Aleix"
+date: '2023-03-26'
+output: html_document
+---
+
+Create PCA object
+
+```{r}
+pca <- prcomp(t(sigFpkmNormalisedCounts), center=True, scale=TRUE)
+scores <- data.frame(targets$sampleID, pca$x[,1:2])
+```
+
+Create QC plot and save in PDF format
+
+```{r}
+pointSize <- 0.4
+pdf(paste("output/PCA.pdf", sep = ""))
+ggplot(scores, aes(x = PC1, y = PC2, label=factor(targets$sampleID), colour=factor(targets$Condition))) + geom_text(size=2.5) + scale_colour_discrete(name="condition")
+
+dev.off()
+```
+
