@@ -1,0 +1,225 @@
+DESeq2 contains functions we will use to normalise RNAseq count data and performs the differential gene expression analysis.
+
+```{r}
+library(DESeq2)
+```
+
+Load the biomaRT package allowing us to annotate the final gene list, with common gene names.
+Load the rtracklayer and GenomicFeatures packaged. These contain functions for handling gene/exon coordinates data.
+
+```{r}
+library(biomaRt)
+library(rtracklayer)
+library(GenomicFeatures)
+```
+
+Load the ggplots libraries. These are required for making QC plots.
+Load the dplyr libraries used for data manipulations such as data.frame merges and filtering.
+Load the stringr libraries used for string (sentence) manipulations.
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(stringr)
+```
+
+Set working directory into your desired folder.
+
+```{r}
+setwd("/Users/aleix/Documents/bioinformatics/esg_RNAseq/")
+```
+
+Read the gene coordinates from the GTF file into an R data structure from resources.
+Export the transcript lengths for all of the transcripts, from this object.
+Use the unique() function to get a vector of all gene IDs.
+Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
+
+```{r}
+txdb <- makeTxDbFromGRanges(import("resources/Drosophila_melanogaster.BDGP6.89.gtf"))
+
+allTranscripts <- transcriptLengths(txdb)
+
+allGeneIDs <- unique(allTranscripts$gene_id)
+
+allGeneLengths <- as.data.frame(allTranscripts %>%
+group_by(gene_id) %>%
+summarize(max.tx_len = max(tx_len)) )
+```
+
+
+# read in sample descriptions
+We are now ready to read‐in the sample descriptions for the gene expression analysis. 
+We need to define our conditions in the context of the biological replicates we have.
+The raw data is not ordered by grouping the different condtions, but by the name of the experiment. Therefore when I upload the sample descriptions I have to order them.
+Read this file into a data.frame.
+
+```{r}
+targets0 <- read.table("resources/targets.txt", header=TRUE, sep="\t")
+targets0 <- targets0[order(targets0$Name), ]
+```
+
+
+# read in featureCounts for all samples
+I have all the samples together in a tsv file that I will first load. The first two columns contains the GeneIDs and gene names, therefore I extract them to a new dataframe (GeneNames) and I remove them from my data.
+
+```{r}
+rawData0 <- read.table('input/E-MTAB-2915-raw-counts.tsv', sep="\t", header=T)
+GeneNames <- subset(rawData0, select=c("Gene.ID", "Gene.Name"))
+rawData0 <- rawData0[, -c(1:2)]
+```
+
+Add column and row names to the rawData data.frame
+```{r}
+colnames(rawData0) <- targets0$sampleID
+rownames(rawData0) <- GeneNames$Gene.ID
+```
+
+Now I split the dataframe into two different dataframes, one for the myoIA data and another of the progenitor.
+I also need to split the targets, but in this case I need to split rows, not columns.
+
+```{r}
+Myo1A_rawdata <- dplyr::select(rawData0, contains("myo"))
+prog_rawdata <- dplyr::select(rawData0, contains("prog"))
+
+Myo1A_targets <- filter(targets0, Expression == 'midgut')
+prog_targets <- filter(targets0, Expression == "cell")
+```
+
+Now I could try to create a loop so the rest of the program runs for both data frames, make two diffrent scripts (or repeated) or simply create a variable and every time I can change it. I'll do the last one as it is easier.
+
+```{r}
+rawData <- prog_rawdata
+targets <- prog_targets
+```
+
+
+# Create a DeSEQ2 design matrix
+To run DESeq2, (following the DeSEq2 analysis guide in bioconductor), we need to create an experimental design object (sample ID to treatment mapping).
+
+```{r}
+exptDesign = data.frame(
+
+row.names = colnames(rawData),
+condition = targets$Condition
+
+)
+```
+
+
+
+
+# create a DeSEQ2 experimental object
+Build a DESeq2 object containing this experimental design and rawData.
+
+```{r}
+exptObject <- DESeqDataSetFromMatrix(
+
+countData = rawData,
+colData = exptDesign,
+design = ~ condition
+
+)
+```
+
+Run the differential analysis. This will normalised data, correct for dispersion (variance between replicates) and set data up for a differential comparison of any 2 conditions.
+
+```{r}
+analysisObject = DESeq(exptObject)
+```
+
+Retrospectively pull out the raw and normalised data from the analysis object.
+
+```{r}
+rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
+normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
+```
+
+
+
+mcols(analysisObject)$basepairs <- allGeneLengths[allGeneLengths$gene_id %in% rownames(analysisObject),]$max.tx_len
+fpkmNormalisedCounts <- as.data.frame(fpkm(analysisObject, robust = TRUE))
+
+
+Here we state the two conditions that we want to compare. we need to add the .myo
+
+```{r}
+conditionOne <- "control.prog"
+conditionTwo <- "UAS-esg.prog"
+```
+
+
+```{r}
+slimRawCounts <- dplyr::select(rawCounts, matches( paste(conditionOne,conditionTwo, sep = "|")  ) )
+slimNormalisedCounts <- dplyr::select(normalisedCounts, matches( paste(conditionOne,conditionTwo, sep = "|")  ) )
+slimFpkmNormalisedCounts <- dplyr::select(fpkmNormalisedCounts, matches( paste(conditionOne,conditionTwo, sep = "|")  ) )
+
+colnames(slimRawCounts) <- paste("raw", colnames(slimRawCounts), sep=".")
+colnames(slimNormalisedCounts) <- paste("norm", colnames(slimNormalisedCounts), sep=".")
+colnames(slimFpkmNormalisedCounts) <- paste("fpkm", colnames(slimFpkmNormalisedCounts), sep=".")
+
+deData <- as.data.frame(results(analysisObject, contrast=c("condition", conditionOne, conditionTwo), pAdjustMethod="BH"))
+
+finalData <- cbind(rownames(deData), slimRawCounts, slimNormalisedCounts, slimFpkmNormalisedCounts, deData)
+
+colnames(finalData)[1] <- "ensemblGeneID"
+```
+
+Sort data and give genes their names
+
+```{r}
+sortedFinalData <- finalData[order(finalData$pvalue), ] %>%
+  left_join(GeneNames, by=c("ensemblGeneID"="Gene.ID"))
+```
+
+
+```{r}
+write.table(sortedFinalData, file=paste("output/", conditionOne, "_vs_", conditionTwo, ".txt", sep=""), row.names=F, sep="\t", quote=F)
+
+```
+
+
+# get significant genes, because we want to cluster on this behaviour
+
+```{r}
+significantGenes <- as.vector(unlist(subset(sortedFinalData, padj <= 0.01, select=c("ensemblGeneID"))))
+
+sigFpkmNormalisedCounts <- subset(fpkmNormalisedCounts, rownames(fpkmNormalisedCounts) %in% significantGenes)
+```
+
+## create pca object
+
+```{r}
+pca <- prcomp(t(sigFpkmNormalisedCounts), center=TRUE, scale=TRUE)
+scores <- data.frame(targets$sampleID, pca$x[,1:2])
+```
+
+## create QC plot
+
+```{r}
+pointSize <- 0.4
+pdf(paste("output/PCA.pdf", sep=""))
+ggplot(scores, aes(x = PC1, y = PC2, label=factor(targets$sampleID), colour=factor(targets$Condition) ) ) +
+geom_text(size=2.5) + scale_colour_discrete(name="condition")
+
+
+dev.off()
+```
+
+# Heatmap
+
+Plot the fpkm values
+```{r}
+library(tibble)
+UASesgplot <- sortedFinalData %>% 
+  filter(pvalue <= 0.01) %>%
+  dplyr::select(Gene.Name, starts_with("FPKM")) %>%
+  column_to_rownames(var="Gene.Name") %>%
+  data.matrix()
+
+pdf(paste("output/ConditionTwo.pdf", sep=""))
+heatmap(UASesgplot)
+dev.off()
+```
+
+
+
