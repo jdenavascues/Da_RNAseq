@@ -39,23 +39,14 @@ The target cells were labelled with UAS-GFP and FAC-sorted, RNA extracted, rever
 Importantly, the first two have their own control, while the last two have a different one, as they were made separately.
 In the first version of this script, I am doing two separate analyses, but because eventually I will need to show all the data together, batch-correction will be required, which is what I will do here.
 
-```{r, include=FALSE}
-# bioinformatics
-library(DESeq2)
-library(biomaRt)         # to annotate the final gene list with common gene names
-library(rtracklayer)     # import function for GRanges
-library(GenomicFeatures) # to handling gene/exon coordinates data
-# data / plotting
-library(ggplot2)
-library(dplyr)
-library(stringr)
-library(pheatmap)        # pretty heatmaps
-library(scico)           # scientific colour maps
-library(dendsort)        # sort dendrograms
+```{r, warning=FALSE}
+if (!require("librarian")) install.packages("librarian")
+# data
+librarian::shelf(dplyr, stringr, DESeq2, edgeR, biomaRt, rtracklayer, GenomicFeatures, limma)
+# graphics
+librarian::shelf(ggplot2, pheatmap, scico, dendsort)  
 # convenience
-#library(readr)           # to unzip (redundant with utils?)
-library(writexl)
-library(here)
+librarian::shelf(here, writexl)
 setwd(here())
 ```
 
@@ -136,7 +127,7 @@ rownames(rawData) <- fileContents$Geneid
 
 We want to remove genes with low counts _in these samples_, so we do:
 ```{r}
-cpms <- edgeR::cpm(rawData)
+cpms <- cpm(rawData)
 keep <- rowSums(cpms > 1) >= 3 # detected in at least 3 samples
 rawData <- rawData[keep,]
 ```
@@ -177,7 +168,7 @@ plotPCA(vsd_Object)
 
 Remove batch effect and re-plot:
 ```{r}
-assay(vsd_Object) <- limma::removeBatchEffect(
+assay(vsd_Object) <- removeBatchEffect(
   assay(vsd_Object),
   batch=vsd_Object$batch,
   design=model.matrix(~condition, colData(vsd_Object))
@@ -274,48 +265,48 @@ We will first obtain the "`tmp`" values for the gene-based plots, and include th
 This looks reasonable, so let us move on by extracting the rawCounts and the normalisedCounts:
 ```{r}
 rawCounts <- as.data.frame(counts(analysisObject, normalized=FALSE))
-#normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
+normalisedCounts <- as.data.frame(counts(analysisObject, normalized=TRUE))
 ```
 
-<!-- Also obtain the TPMs as a normalisation value: -->
-<!-- ```{r} -->
-<!-- # add column with transcript lengths, turn GeneID rownames into column -->
-<!-- rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T) -->
-<!-- rawCountData <- rawDataWithLengths[,colnames(rawCounts)] -->
-<!-- rownames(rawCountData) <- rawDataWithLengths[,1] -->
+Also obtain the TPMs as a normalisation value:
+```{r}
+# add column with transcript lengths, turn GeneID rownames into column
+rawDataWithLengths <- merge(allGeneLengths, rawCounts, by.x="gene_id", by.y="row.names", all=T)
+rawCountData <- rawDataWithLengths[,colnames(rawCounts)]
+rownames(rawCountData) <- rawDataWithLengths[,1]
 
-<!-- # create matrix of TPM values per sample -->
-<!-- tpmData <- NULL -->
-<!-- for (colName in colnames(rawCountData)) { -->
-<!--     tpmData <- cbind(tpmData, tpm(rawDataWithLengths[,colName], rawDataWithLengths$max.tx_len)) -->
-<!-- } -->
-<!-- # turn TPM into dataframe -->
-<!-- tpmData <- as.data.frame(tpmData) -->
-<!-- colnames(tpmData) <- colnames(rawCounts) -->
-<!-- rownames(tpmData) <- rawDataWithLengths[,1] -->
-<!-- # reduce TPM to the genes detected in the RNAseq samples -->
-<!-- tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ] -->
+# create matrix of TPM values per sample
+tpmData <- NULL
+for (colName in colnames(rawCountData)) {
+    tpmData <- cbind(tpmData, tpm(rawDataWithLengths[,colName], rawDataWithLengths$max.tx_len))
+}
+# turn TPM into dataframe
+tpmData <- as.data.frame(tpmData)
+colnames(tpmData) <- colnames(rawCounts)
+rownames(tpmData) <- rawDataWithLengths[,1]
+# reduce TPM to the genes detected in the RNAseq samples
+tpmNormalisedCounts <- tpmData[match(rownames(rawCounts), rownames(tpmData)), ]
 
-<!-- # test that the rows are still the same: -->
-<!-- if (!identical(rownames(rawCounts), rownames(normalisedCounts))) { -->
-<!--     stop() -->
-<!-- } -->
-<!-- if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) { -->
-<!--     stop() -->
-<!-- } -->
-<!-- # test that there is information for all of them (e.g. no mismatch between the GTF files used) -->
-<!-- cat( -->
-<!--   cat('There are\t',nrow(rawCounts), -->
-<!--       '\tgenes listed in `rawCounts`, and there are data for\t\t', -->
-<!--       nrow(na.omit(rawCounts)), '\tof them.\n'), -->
-<!--   cat('There are\t',nrow(normalisedCounts), -->
-<!--       '\tgenes listed in `normalisedCounts`, and there are data for\t', -->
-<!--       nrow(na.omit(normalisedCounts)), '\tof them.\n'), -->
-<!--   cat('There are\t',nrow(tpmNormalisedCounts), -->
-<!--       '\tgenes listed in `tpmNormalisedCounts`, and there are data for\t', -->
-<!--       nrow(na.omit(tpmNormalisedCounts)), '\tof them.\n') -->
-<!-- ) -->
-<!-- ``` -->
+# test that the rows are still the same:
+if (!identical(rownames(rawCounts), rownames(normalisedCounts))) {
+    stop()
+}
+if (!identical(rownames(tpmNormalisedCounts), rownames(normalisedCounts))) {
+    stop()
+}
+# test that there is information for all of them (e.g. no mismatch between the GTF files used)
+cat(
+  cat('There are\t',nrow(rawCounts),
+      '\tgenes listed in `rawCounts`, and there are data for\t\t',
+      nrow(na.omit(rawCounts)), '\tof them.\n'),
+  cat('There are\t',nrow(normalisedCounts),
+      '\tgenes listed in `normalisedCounts`, and there are data for\t',
+      nrow(na.omit(normalisedCounts)), '\tof them.\n'),
+  cat('There are\t',nrow(tpmNormalisedCounts),
+      '\tgenes listed in `tpmNormalisedCounts`, and there are data for\t',
+      nrow(na.omit(tpmNormalisedCounts)), '\tof them.\n')
+)
+```
 
 All seems fine, so we can store these data. For visualisation:
 ```{r}

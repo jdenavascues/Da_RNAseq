@@ -23,31 +23,14 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
 ```
 
 **Libraries needed:**
-
-Installed, not loaded: ??????????
-
-Loaded:
-
-```{r, include=FALSE}
+```{r, warning=FALSE, echo=FALSE}
+if (!require("librarian")) install.packages("librarian")
 # data
-library(tibble)
-library(stringr)
-library(purrr)         # map
-library(DescTools)     # outside operator
-library(dplyr)         # filter
-# library(genefilter)
+librarian::shelf(tibble, stringr, purrr, dplyr, plyr, DescTools, limma)
 # graphics
-library(ggplot2)
-library(ggthemes)       # italics in the figures
-library(ggtext)         # italics in the figures
-library(pheatmap)       # pretty heatmap
-library(dendsort)       # to sort dendrograms
-library(scico)          # scientific colormaps
-library(ggrepel)        # to avoid overlapping text
-library(cetcolor)       # Peter Kovesi's perceptually uniform colour maps
+librarian::shelf(RColorBrewer, pheatmap, cetcolor)
 # convenience
-library(here);
-setwd(here())
+library(here); setwd(here())
 ```
 
 # RNAseq results visualisation: Samples heatmap
@@ -81,7 +64,7 @@ names(datasets) <- str_split_fixed(
 Total unique differentially expressed genes for | log2FC | > 2:
 ```{r}
 # Filter for DEG with abs(log2FC) >= `fc_thresh`
-fc_thresh <- 3
+fc_thresh <- 2.5
 DE_genes <- datasets %>% 
   map( filter, padj <= 0.05 ) %>%
   map( filter, log2FoldChange %][% c(-fc_thresh, fc_thresh) )
@@ -95,10 +78,9 @@ length(DE_unique_genes)
 Let us first try to use the data as 'raw' as possible: TPM-normalised counts, Z-scored (as the range of values is 0.2 - 10,000) - obviously with no batch correction.
 
 ```{r}
-# make rownames a column to filter by DEGs
-tpmNormalisedCounts$EnsemblGeneID <- rownames(tpmNormalisedCounts)
-DE_tpm <- tpmNormalisedCounts[match(DE_unique_genes, tpmNormalisedCounts$EnsemblGeneID),]
-DE_tpm <- subset(DE_tpm, select = -EnsemblGeneID) # removes rownames column
+# filter by DEGs
+DE_tpm <- tpmNormalisedCounts[match(DE_unique_genes,
+                                    rownames(tpmNormalisedCounts)),]
 ```
 
 This gets us the TPMs of all DEGs, without Z-scoring -- this is done internally in the `pheatmap` function).
@@ -108,38 +90,35 @@ Prepare the heatmap customisation:
 main.title <-  'Clustered heatmap of DEGs'
 # annotation labels
 ## for batch
-annot_batch <- data.frame(batch = ifelse(test = targets$Batch == 'a',
-                                         yes = '1',
-                                         no =  '2'))
-## for genotype
 ann_labels <- data.frame(batch = ifelse(test = targets$Batch == 'a',
                                          yes = '1',
                                          no =  '2'))
-ann_labels$condition <- plyr::mapvalues(targets$Condition,
-                                       from=unique(targets$Condition),
-                                       to=c('da RNAi', 'da ov/ex',
-                                            'control', 'da:da ov/ex',
-                                            'scute ov/ex'))
+## for genotype
+ann_labels$condition <- mapvalues(targets$Condition,
+                                  from=unique(targets$Condition),
+                                  to=c('da RNAi', 'da ov/ex',
+                                       'control', 'da:da ov/ex',
+                                       'scute ov/ex'))
 ann_labels$condition <- factor(ann_labels$condition,
                                levels=c('da RNAi', 'control',
                                         'da ov/ex', 'da:da ov/ex',
                                         'scute ov/ex'))
-rownames(annot_batch) <- targets$sampleIDs # same as `names(DE_tpm)`
+rownames(ann_labels) <- targets$sampleIDs # same as `names(DE_tpm)`
 # annotation colours
 ann_colors = list(
-  batch = c('1' = RColorBrewer::brewer.pal(12, 'Paired')[2],
-            '2' = RColorBrewer::brewer.pal(12, 'Paired')[8]),
-  condition = c("da RNAi" = RColorBrewer::brewer.pal(12, 'Paired')[9],
-                "da ov/ex" = RColorBrewer::brewer.pal(12, 'Paired')[5],
-                "control" = RColorBrewer::brewer.pal(12, 'Paired')[1],
-                "da:da ov/ex" = RColorBrewer::brewer.pal(12, 'Paired')[6],
-                "scute ov/ex" = RColorBrewer::brewer.pal(12, 'Paired')[4])
+  batch = c('1' = brewer.pal(12, 'Paired')[2],
+            '2' = brewer.pal(12, 'Paired')[8]),
+  condition = c("da RNAi" = brewer.pal(12, 'Paired')[9],
+                "da ov/ex" = brewer.pal(12, 'Paired')[5],
+                "control" = brewer.pal(12, 'Paired')[1],
+                "da:da ov/ex" = brewer.pal(12, 'Paired')[6],
+                "scute ov/ex" = brewer.pal(12, 'Paired')[4])
   )
 ```
 
+### Heatmap of scaled TPM counts
 
-
-```{r, fig.height=8, fig.width=10}
+```{r, fig.height=12, fig.width=10}
 hm <- pheatmap(
   # data
     mat               = DE_tpm,
@@ -148,22 +127,20 @@ hm <- pheatmap(
     main              = main.title,
     fontsize          = 14,
     clustering_method = "ward.D2",
-    #annotation        = ann_labels,
-    annotation    = dplyr::select(ann_labels, condition),
   # rows
     cluster_rows      = TRUE,
-    clustering_distance_rows = 'correlation',
+    clustering_distance_rows = 'manhattan',
     treeheight_row    = 25,      # default is 50
     show_rownames     = FALSE,
   # cols
     cluster_cols      = TRUE,
-    clustering_distance_cols = 'correlation',
+    clustering_distance_cols = 'manhattan',
     treeheight_col    = 25,
-    show_colnames     = TRUE,
     labels_col        = targets$sample_type,
     fontsize_col      = 9,
     angle_col         = 45,
-  # legends
+  # annotation
+    annotation        = ann_labels,
     annotation_colors = ann_colors,
   # tiles
     color             = cet_pal(n = 256, name = "cbd1", alpha = 1),
@@ -173,124 +150,151 @@ hm <- pheatmap(
 )
 hm
 ```
-Note that for a 'publication' customised plot, it will probably be better to go the `ggplot2` route using [this approach](https://jcoliver.github.io/learn-r/008-ggplot-dendrograms-and-heatmaps.html) or [this one](https://stackoverflow.com/questions/36852101/r-legend-title-or-units-when-using-pheatmap).
 
-Some tips for further modifying the `pheatmap` output are [here](https://stackoverflow.com/questions/33292067/pheatmap-annotation-colors-and-border).
+The 'looks' are ok, but the organisation of the columns itself is not. Let us try with a batch-corrected version.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+We use the `DESeqTranform` object to mark the batch-effects, and `limma::removeBatchEffect` to remove them:
 ```{r}
-# get the TPM average per gene per condition
-means_DE <- data.frame(matrix(nrow=length(DE_unique_genes), ncol = 0))
-for ( stype in unique(targets$sample_types) ) {
-  means_DE <- cbind(means_DE, (rowMeans(
-    DE_tpm[, targets$sampleIDs[targets$sample_types==stype] ] )))
-}
-colnames(means_DE) <- unique(targets$sample_types)
-###
-
-zscore_DE <- data.frame(matrix(nrow=length(DE_unique_genes), ncol = 0))
-
-# choose to use all samples or the mean of the replicates for each sample
-var1 <- DE_tpm
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+vsd <- readRDS('output/vst_pseudocounts.RDS')
+# min(tpmNormalisedCounts) is 0 so we need to add 1 for log transform
+tpm_log_bcorr <- removeBatchEffect(
+  log2(tpmNormalisedCounts+1),
+  batch=vsd$batch,
+  design=model.matrix(~condition, colData(vsd) )
+)
+# reverse log transform
+tpm_bcorr <- 2^tpm_log_bcorr
+# filter by DEGs
+DE_tpm_bcorr <- tpm_bcorr[match(DE_unique_genes,
+                             rownames(tpm_bcorr)),]
 ```
 
+ALl annotations are the same -- we are now ready to plot.
 
+### Heatmap of batch-corrected, z-scored TPM
 
-```{r}
-
-vsd <- assay(vst(dds))
-Z <- t(scale(t(vsd)))
-
-
+```{r, fig.height=12, fig.width=10}
+hm <- pheatmap(
+  # data
+    mat               = DE_tpm_bcorr,
+    scale             = "row",   # z-scores the rows
+  # main
+    main              = main.title,
+    fontsize          = 14,
+    clustering_method = "ward.D2",
+  # rows
+    cluster_rows      = TRUE,
+    clustering_distance_rows = 'minkowski',
+    treeheight_row    = 25,      # default is 50
+    cutree_rows       = 6,
+    show_rownames     = FALSE,
+  # cols
+    cluster_cols      = TRUE,
+    clustering_distance_cols = 'canberra',
+    treeheight_col    = 25,
+    labels_col        = targets$sample_type,
+    fontsize_col      = 9,
+    angle_col         = 45,
+  # annotation
+    annotation        = ann_labels,
+    annotation_colors = ann_colors,
+  # tiles
+    color             = cet_pal(n = 256, name = "cbd1", alpha = 1),
+    border_color      = NA,
+    cellwidth         = 20,
+    cellheight        = 0.5
+)
+hm
 ```
 
+This is clearly more reasonable -- however, it requires transforming TPMs forth and back. We might just as well use the pseudocounts generated by the `DESeq2::vst` transformation.
 
+## 3 Heatmap of batch-corrected pseudocounts
 
-
-
-
-
-
-
-
-
-
-
-
-## Using pseudocounts with batch-correction
-No need to do Z-scoring or any other normalisation here?? the range of values is ~ 5-22
-
-(What would be the point of doing that *without* batch correction)
-
-https://hbctraining.github.io/GCC-BOSC-2018/lessons/data_visualization.html
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Plot the tpm values
-
+To do this, we need the batch-corrected, `DESeqTranform` object from the DGE analysis with `DESeq2`, filtered by `log2FoldChange` and `padj`:
 ```{r}
-relative_Significant_Genes <- sortedFinalData_named_KD %>% 
-  filter(padj <= 0.01) %>%
-  filter(log2FoldChange >= 1 | log2FoldChange <= -1) %>%
-  dplyr::select(external_gene_name, starts_with("TPM")) %>%
-  column_to_rownames(var="external_gene_name") %>%
-  data.matrix()
-
-#heatmap(heatmap_prep)
-
-
-vsd <- assay(vst(dds))
-Z <- t(scale(t(vsd)))
-
+vsd_bcorr <- readRDS('output/vst_pseudocounts_batchCorrected.RDS')
+DE_vsd_bcorr <- as.data.frame(assay(vsd_bcorr)[match(DE_unique_genes,
+                             rownames(vsd_bcorr)),])
 ```
 
+It is not needed to get the z-scores for the rows (`scale = 'row'`), as the range of values is ~3-18:
+```{r, fig.height=12, fig.width=10}
+hm <- pheatmap(
+  # data
+    mat               = DE_vsd_bcorr,
+  # main
+    main              = main.title,
+    fontsize          = 14,
+    clustering_method = "ward.D2",
+  # rows
+    cluster_rows      = TRUE,
+    clustering_distance_rows = 'euclidean', # "euclidean", "maximum", "manhattan", "canberra", "binary", "minkowski"
+    treeheight_row    = 25,      # default is 50
+    show_rownames     = FALSE,
+  # cols
+    cluster_cols      = TRUE,
+    clustering_distance_cols = 'euclidean',
+    treeheight_col    = 25,
+    labels_col        = targets$sample_type,
+    fontsize_col      = 9,
+    angle_col         = 45,
+  # annotation
+    annotation        = ann_labels,
+    annotation_colors = ann_colors,
+  # tiles
+    color             = cet_pal(n = 256, name = "cbd1", alpha = 1),
+    border_color      = NA,
+    cellwidth         = 20,
+    cellheight        = 0.5
+)
+hm
+```
+
+OK, I see the problem here. Clearly the way to go is do the reverse transformation $2^{`vsd`}$. But what is the point of doing this with TPMs? Normalising by transcript units loses its the "physicality" if applying a ${log~2~(tpm+1)}$ transform. So let us use the batch-corrected `DESeqTranform` object directly. The dataframe `DE_vsd_bcorr` already contains the matrix of `vst`-transformed values _for the DEGs_, so we just need to do:
+
+```{r}
+DE_bcorr <- 2^DE_vsd_bcorr
+```
+
+This has a range of ~ 12-30,000, so we have to plot with z-score scaling:
+
+```{r, fig.height=12, fig.width=10}
+hm <- pheatmap(
+  # data
+    mat               = DE_bcorr,
+    scale             = 'row',
+  # main
+    main              = main.title,
+    fontsize          = 14,
+    clustering_method = "ward.D2",
+  # rows
+    cluster_rows      = TRUE,
+    clustering_distance_rows = 'minkowski', # "euclidean", "maximum", "manhattan", "canberra", "minkowski"
+    treeheight_row    = 25,      # default is 50
+    cutree_rows       = 6,
+    show_rownames     = FALSE,
+  # cols
+    cluster_cols      = TRUE,
+    clustering_distance_cols = 'canberra',
+    treeheight_col    = 25,
+    labels_col        = targets$sample_type,
+    fontsize_col      = 9,
+    angle_col         = 45,
+  # annotation
+    annotation        = ann_labels,
+    annotation_colors = ann_colors,
+  # tiles
+    color             = cet_pal(n = 256, name = "cbd1", alpha = 1),
+    border_color      = NA,
+    cellwidth         = 20,
+    cellheight        = 0.5,
+  # save plot
+    filename          = 'Heatmap_vsd_bcorr.tiff',
+    width             = 10,
+    height            = 12
+)
+hm
+```
+
+This is the clear winner, so I add the parameters to save it to file.

@@ -27,18 +27,13 @@ knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
 Installed, not loaded: `svglite`, `limma`, `matrixStats`.
 
 Loaded:
-```{r, warning=FALSE, echo=FALSE}
-# data
-library(tibble)
-library(DESeq2)         # to handle VSD object
+```{r, warning=FALSE}
+if (!require("librarian")) install.packages("librarian")
+librarian::shelf(tibble, DESeq2)
 # graphics
-library(ggplot2)        # package 'svglite' needs be installed
-library(ggthemes)       # italics in the figures
-library(ggtext)         # italics in the figures
-library(ggrepel)        # to avoid overlapping text
+librarian::shelf(ggplot2, ggthemes, ggtext, ggrepel)
 # convenience
-library(here);
-setwd(here())
+library(here); setwd(here())
 ```
 
 # RNAseq results visualisation: Principal Components Analysis
@@ -244,7 +239,7 @@ p1 + annotation_custom(ggplotGrob(p2),
 Some genes have very low variance (which is the whole point of the `vst` transformation), but none of them are zero.
 There seems to be little point in drawing an arbitrary threshold, so I move on with this.
 
-### Pseudocounts without batch correction
+### Pseudocounts _without_ batch correction
 
 ```{r}
 pca <- prcomp(t(assay(vsd)), center=TRUE, scale=TRUE)
@@ -302,7 +297,7 @@ ggsave('PCA_vsd.png', plot = last_plot(), device = png,
 
 Again, very similar to the other 3, which is (marginally) reassuring.
 
-### Pseudocounts without batch correction
+### Pseudocounts _with_ batch correction
 
 Now, if we do the same with the **batch-corrected** VS-transformed data:
 ```{r}
