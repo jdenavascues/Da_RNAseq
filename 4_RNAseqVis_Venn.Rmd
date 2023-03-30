@@ -1,5 +1,5 @@
 ---
-title: "Visualisation of DESeq2 results"
+title: "Visualisation of DESeq2 results with sets"
 description: "DEG analysis based on DESeq2 and GSEA"
 principal investigator: "Joaquín de Navascués"
 researcher: "Aleix Puig, modified by Joaquín de Navascués"
@@ -26,9 +26,9 @@ knitr::opts_chunk$set(dev = 'png',
 ```{r load_libraries, warning=FALSE, echo=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
-librarian::shelf(venneuler, dplyr, reshape2, biomaRt)
+librarian::shelf(dplyr, purrr, reshape2, biomaRt, DescTools, santoku)
 # graphics
-librarian::shelf(UpSetR, VennDiagram)
+librarian::shelf(UpSetR, VennDiagram, ggvenn, ggVennDiagram, eulerr)
 # convenience
 librarian::shelf(here)
 setwd(here::here()) # to distinguish from dplyr::here()
@@ -42,8 +42,11 @@ figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
 dir.create(figdir, showWarnings = FALSE)
 ```
 
-# RNAseq results visualisation: Venn diagram of DEGs
+# RNAseq results visualisation with sets
 
+## 1 Getting ready
+
+This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and gene symbol:
 ```{r load_DEG_data}
 # experimental design and labels
 targets <- readRDS('output/targets.RDS')
@@ -62,23 +65,90 @@ dlist <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ens
 rownames(dlist) <- dlist$ensembl_gene_id
 ```
 
-```{r load_DEG_data}
+Now, for each condition, we will need to get the lists of misregulated genes for a given threshold of fold change:
+```{r extract_regulated_sets, warning = FALSE}
+# extract genes with abs(log2FC)
+extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
+  # fc_thresh must be a positive number
+  # list_of_degs is a list of dataframes
+  # names_degs is a list of strings
+  # they must have the same length
+  reg_lvl <- paste0(' reg@log~2~FC≥', fc_thresh)
+  breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
+  regulated_sets <- NULL
+  for (l in 1:length(list_of_degs)) {
+    degs_na <- dplyr::select(list_of_degs[[l]], c(log2FoldChange, padj, ensemblGeneID))
+    # better not pass NAs to kiru
+    degs <- na.omit(degs_na)
+    # filter by log2FC threshold
+    degs$reg <- 
+      kiru(
+        degs$log2FoldChange,
+        breaks = breaks,
+        extend = TRUE,
+        labels=c("down", "non", "up")
+      )
+    # recover NAs as non-regulataed
+    added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
+    added_nas$reg <- 'non'
+    degs <- rbind(degs, added_nas)
+    # filter by p-val
+    degs$reg <- as.character(degs$reg)
+    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
+    # store reg status
+    #rownames(degs) <- degs$ensemblGeneID
+    degs[ , names_degs[[l]] ] <- degs$reg
+    regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
+  }
+  regulated_sets <- purrr::reduce(regulated_sets, full_join, by='ensemblGeneID')
+  
+  return(regulated_sets)
+}
 
+list_of_degs <- list(DaKD_deg, DaOE_deg, DaDaOE_deg, ScOE_deg)
+names_degs <- list(
+  as.character(targets[targets$Condition=='DaKD','condition_md'][[1]]),
+  as.character(targets[targets$Condition=='DaOE','condition_md'][[1]]),
+  as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
+  as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
+  )
 
-########################################################################
+regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=2)
+```
 
+## 2 Euler and Venn diagrams
 
-define_regulation <- function(x) {
+https://cran.r-project.org/web/packages/eulerr/vignettes/introduction.html
+https://github.com/yanlinlin82/ggvenn
+
+```{r}
+
+# extract genes with abs(log2FC)
+define_regulation <- function(x, fc_thresh) {
   select_Significant_Genes <- x %>% 
     filter(padj <= 0.05) %>%
-    filter(log2FoldChange >= 1 | log2FoldChange <= -1)
+    filter(log2FoldChange %][% c(-fc_thresh, fc_thresh))
   
-  select_Significant_Genes$Regulation <- cut(select_Significant_Genes$log2FoldChange, c(-Inf,0,Inf), c("DOWN", "UP"))
+  select_Significant_Genes[, paste0('reg@abs(log2fc)>', fc_thresh)] <- cut(
+    select_Significant_Genes$log2FoldChange, c(-Inf,0,Inf), c("DOWN", "UP")
+    )
  # Only for adding gene names if necessary
    select_Significant_Genes <- merge(select_Significant_Genes, dlist, by=1, all.x = TRUE)
   return(select_Significant_Genes)
 }
-  
+
+```
+
+
+
+
+
+
+
+
+```{r}
+
+
 upregulation <- function(select_Significant_Genes) {
   upregulation <- select_Significant_Genes %>% 
     filter(log2FoldChange >= 1) %>%

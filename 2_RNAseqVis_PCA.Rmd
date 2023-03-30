@@ -371,7 +371,7 @@ So we do:
 
 # min(tpmNormalisedCounts) is 0 so we need to add 1 for log transform
 tpm_log_bcorr <- limma::removeBatchEffect(
-  log2(tpmNormalisedCounts+1),
+  <- log2(tpmNormalisedCounts+1),
   batch=vsd$batch,
   design=model.matrix(~condition, colData(vsd) )
 )
