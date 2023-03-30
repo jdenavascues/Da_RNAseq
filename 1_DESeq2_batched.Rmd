@@ -13,7 +13,7 @@ output:
     css: doc.css
 ---
 ```{r setup, echo = FALSE, cache = FALSE}
-knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'), 
+knitr::opts_chunk$set(dev = 'png', 
                       fig.align = 'center', fig.height = 5, fig.width = 8.5, 
                       pdf.options(encoding = "ISOLatin9.enc"),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
@@ -46,7 +46,7 @@ librarian::shelf(dplyr, stringr, DESeq2, edgeR, biomaRt, rtracklayer, GenomicFea
 # graphics
 librarian::shelf(ggplot2, pheatmap, scico, dendsort)  
 # convenience
-librarian::shelf(here, writexl)
+librarian::shelf(here, writexl, gzcon)
 setwd(here())
 ```
 
@@ -66,11 +66,11 @@ Export the transcript lengths for all of the transcripts, from this object.
 Use the unique() function to get a vector of all gene IDs.
 Get the maximum transcript length for each gene. Maximum gene lengths are required for a gene‐length‐normalisation later in the script.
 
-```{r, echo=FALSE, warning=FALSE}
-gtf <- 'Drosophila_melanogaster.BDGP6.28.101.gtf' # same release as the one used for mapping
-zipfile <- paste0('resources/', gtf, '.zip')
-txdb <- makeTxDbFromGRanges( import( unzip(zipfile, gtf) ) )
-unlink(gtf) # cleanup - delete uncompressed file
+```{r, echo=FALSE, warning=FALSE, results=FALSE}
+gtfurl <- paste0('https://ftp.ensembl.org/pub/release-101/gtf/',
+                 'drosophila_melanogaster/',
+                 'Drosophila_melanogaster.BDGP6.28.101.gtf.gz')
+txdb <- makeTxDbFromGRanges( import( GFFFile(gtfurl) ) ) 
 allTranscripts <- transcriptLengths(txdb)
 allGeneIDs <- unique(allTranscripts$gene_id)
 allGeneLengths <- as.data.frame(allTranscripts %>%

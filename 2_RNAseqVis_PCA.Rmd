@@ -16,24 +16,28 @@ ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
 ```
 
 ```{r setup, echo = FALSE, cache = FALSE}
-knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'), 
+knitr::opts_chunk$set(dev = 'png', 
                       fig.align = 'center', fig.height = 5, fig.width = 8.5, 
                       pdf.options(encoding = "ISOLatin9.enc"),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
 **Libraries needed:**
-
-Installed, not loaded: `svglite`, `limma`, `matrixStats`.
-
-Loaded:
 ```{r, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
-librarian::shelf(tibble, DESeq2)
+librarian::shelf(tibble, DESeq2, stringr)
 # graphics
 librarian::shelf(ggplot2, ggthemes, ggtext, ggrepel)
 # convenience
 library(here); setwd(here())
+```
+
+**Path to definitive images (outside repo):**
+```{r}
+figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
+                   paste0(tail(str_split(getwd(),'/')[[1]],1), '_figures')),
+                 collapse='/')
+dir.create(figdir, showWarnings = FALSE)
 ```
 
 # RNAseq results visualisation: Principal Components Analysis
@@ -288,11 +292,11 @@ ggplot(scores,
 ```
 ```{r}
 ggsave('PCA_vsd.pdf', plot = last_plot(), device = 'pdf',
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ggsave('PCA_vsd.svg', plot = last_plot(), device = 'svg',
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ggsave('PCA_vsd.png', plot = last_plot(), device = png,
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ```
 
 Again, very similar to the other 3, which is (marginally) reassuring.
@@ -349,11 +353,11 @@ ggplot(scores,
 
 ```{r}
 ggsave('PCA_vsd_bcorr.pdf', plot = last_plot(), device = 'pdf',
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ggsave('PCA_vsd_bcorr.svg', plot = last_plot(), device = 'svg',
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ggsave('PCA_vsd_bcorr.png', plot = last_plot(), device = png,
-       path = 'output', dpi = 300)
+       path = figdir, dpi = 300)
 ```
 
 ## 3 Using TPM counts

@@ -16,7 +16,7 @@ ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
 ```
 
 ```{r setup, echo = FALSE, cache = FALSE}
-knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'), 
+knitr::opts_chunk$set(dev = 'png', 
                       fig.align = 'center', fig.height = 5, fig.width = 8.5, 
                       pdf.options(encoding = "ISOLatin9.enc"),
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
@@ -30,7 +30,16 @@ librarian::shelf(tibble, stringr, purrr, dplyr, plyr, DescTools, limma)
 # graphics
 librarian::shelf(RColorBrewer, pheatmap, cetcolor)
 # convenience
-library(here); setwd(here())
+library(here)
+setwd(here::here()) # to distinguish from plyr::here()
+```
+
+**Path to definitive images (outside repo):**
+```{r}
+figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
+                   paste0(tail(str_split(getwd(),'/')[[1]],1), '_figures')),
+                 collapse='/')
+dir.create(figdir, showWarnings = FALSE)
 ```
 
 # RNAseq results visualisation: Samples heatmap
@@ -45,6 +54,7 @@ targets$sample_type <- targets$Condition
 targets$sample_type[targets$sample_type=='Control'] <- str_c(
   targets$Condition, "_", targets$Batch)[targets$Condition=='Control']
 targets[,c('Condition', 'sampleIDs', 'sample_type')]
+saveRDS(targets, file='output/targets.RDS')
 ```
 
 ```{r}
@@ -289,11 +299,28 @@ hm <- pheatmap(
     border_color      = NA,
     cellwidth         = 20,
     cellheight        = 0.5,
-  # save plot
-    filename          = 'Heatmap_vsd_bcorr.tiff',
-    width             = 10,
-    height            = 12
 )
+# save it
+tiff(file=paste0(figdir,'/Heatmap_vsd_bcorr.tiff'),
+     width=10, height=12, units="in", res=300)
+hm
+dev.off()
+
+pdf(file=paste0(figdir,'/Heatmap_vsd_bcorr.pdf'),
+     width=10, height=12)
+hm
+dev.off()
+
+png(file=paste0(figdir,'/Heatmap_vsd_bcorr.png'),
+     width=10, height=12, units="in", res=300)
+hm
+dev.off()
+
+svg(file=paste0(figdir,'/Heatmap_vsd_bcorr.svg'),
+     width=10, height=12)
+hm
+dev.off()
+
 hm
 ```
 
