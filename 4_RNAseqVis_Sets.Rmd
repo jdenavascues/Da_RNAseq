@@ -26,9 +26,10 @@ knitr::opts_chunk$set(dev = 'png',
 ```{r load_libraries, warning=FALSE, echo=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
-librarian::shelf(dplyr, purrr, reshape2, biomaRt, DescTools, santoku)
+librarian::shelf(dplyr, purrr, stringr, reshape2, biomaRt, DescTools, santoku)
 # graphics
-librarian::shelf(UpSetR, VennDiagram, ggvenn, ggVennDiagram, eulerr)
+librarian::shelf(UpSetR, ggVennDiagram, ggvenn, eulerr, RColorBrewer,
+                 ggthemes, ggtext, cetcolor)
 # convenience
 librarian::shelf(here)
 setwd(here::here()) # to distinguish from dplyr::here()
@@ -66,7 +67,7 @@ rownames(dlist) <- dlist$ensembl_gene_id
 ```
 
 Now, for each condition, we will need to get the lists of misregulated genes for a given threshold of fold change:
-```{r extract_regulated_sets, warning = FALSE}
+```{r extract_regulated_sets, warning = FALSE, results=hide}
 # extract genes with abs(log2FC)
 extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
   # fc_thresh must be a positive number
@@ -88,20 +89,22 @@ extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
         extend = TRUE,
         labels=c("down", "non", "up")
       )
+    # filter by p-val
+    degs$reg <- as.character(degs$reg)
+    x <- 1:nrow(degs)
+    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
     # recover NAs as non-regulataed
     added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
     added_nas$reg <- 'non'
     degs <- rbind(degs, added_nas)
-    # filter by p-val
-    degs$reg <- as.character(degs$reg)
-    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
     # store reg status
     #rownames(degs) <- degs$ensemblGeneID
     degs[ , names_degs[[l]] ] <- degs$reg
     regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
   }
   regulated_sets <- purrr::reduce(regulated_sets, full_join, by='ensemblGeneID')
-  
+  rownames(regulated_sets) <- regulated_sets$ensemblGeneID
+  regulated_sets <- dplyr::select(regulated_sets, -ensemblGeneID)
   return(regulated_sets)
 }
 
@@ -112,109 +115,137 @@ names_degs <- list(
   as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
   as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
   )
-
 regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=2)
+head(regs,2)
 ```
+
+Now we need to turn this into logicals:
+```{r extract_up|down}
+get_deg_logical <- function(regs, direction){
+  # direction must be 'up' or 'down'
+  # regs is the output of `extract_regulated_sets`
+  deg_logical_set <- (regs == direction)[
+    ( rowSums(regs==direction)!=0 ), 
+  ]
+  return(deg_logical_set)
+}
+upreg   <- get_deg_logical(regs,'up')
+downreg <- get_deg_logical(regs,'down')
+```
+
 
 ## 2 Euler and Venn diagrams
 
-https://cran.r-project.org/web/packages/eulerr/vignettes/introduction.html
-https://github.com/yanlinlin82/ggvenn
+### Euler diagrams using `eulerr`
+
+Using instructions from the [vignette](https://cran.r-project.org/web/packages/eulerr/vignettes/introduction.html):
+```{r euler_plots, results=hide}
+up_colours <- c(
+  brewer.pal(9,'BrBG')[3],   # daRNAi   brown
+  brewer.pal(9,'YlOrBr')[4], # daOVEX   yellow/orange
+  brewer.pal(9,'Reds')[5],   # dadaOVEX red
+  brewer.pal(9,'PuRd')[3]    # scOVEX   violet
+)
+down_colours <- c(
+  brewer.pal(11,'PRGn')[8],  # daRNAi   green
+  brewer.pal(11,'RdYlBu')[8], # daOVEX   pale blue
+  brewer.pal(11,'RdBu')[9],  # dadaOVEX blue
+  brewer.pal(9,'Purples')[5]     # scOVEX   purple
+)
+upfit <- euler(upreg, loss = 'region', loss_aggregator = 'max')
+downfit <- euler(downreg, loss = 'region', loss_aggregator = 'max')
+upplot <- plot(upfit,
+               fill = up_colours,
+               quantities = TRUE)
+downplot <- plot(downfit,
+                 fill = down_colours,
+                 quantities = TRUE)
+# save it
+pdf(file=paste0(figdir,'/euler_up.pdf'),
+     width=10, height=12)
+upplot
+dev.off()
+
+pdf(file=paste0(figdir,'/euler_down.pdf'),
+     width=10, height=12)
+downplot
+dev.off()
+
+svg(file=paste0(figdir,'/euler_up.svg'),
+     width=10, height=12)
+upplot
+dev.off()
+
+svg(file=paste0(figdir,'/euler_down.svg'),
+     width=10, height=12)
+downplot
+dev.off()
+
+print(upplot)
+print(downplot)
+```
+
+### Venn diagrams using `ggvenn`
+
+We now need the first column to have the names of the elements in the set, so the `rownames` need become the first column:
+```{r prepare_data_for_ggvenn, results=hide}
+upreg   <- cbind(data.frame(ensemblGeneID=rownames(upreg)), upreg)
+downreg <- cbind(data.frame(ensemblGeneID=rownames(downreg)), downreg)
+head(upreg,2)
+```
+
+Now both `upreg` and `downreg` are data.frames, which is what `ggvenn` wants as input.
+
+Using instructions from the [vignette](https://github.com/yanlinlin82/ggvenn):
+```{r plot_ggvenn_up, fig.width=18, warning=FALSE}
+upvenn <- ggplot(upreg,
+                 aes(A = `*da^RNAi^*`,
+                     B = `*da^OVEX^*`,
+                     C = `*da:da^OVEX^*`,
+                     D = `*scute^OVEX^*`)) +
+  geom_venn(show_percentage = FALSE) +
+  theme_void() +
+  coord_fixed()
+upvenn
+```
+```{r prepare_data_for_ggvenn, results=hide}
+#names(upreg) <- c('ensemblGeneID', 'daKD', 'daOE', 'dadaOE', 'scOE')
+names(downreg) <- c('ensemblGeneID', 'daKD', 'daOE', 'dadaOE', 'scOE')
+head(downreg,2)
+```
+
+```{r plot_ggvenn_down, fig.width=18, warning=FALSE}
+downvenn <- ggplot(downreg,
+                   aes(A = `daKD`,
+                       B = `daOE`,
+                       C = `dadaOE`,
+                       D = `scOE`)) +
+  geom_venn(show_percentage = FALSE) +
+  theme_void() +
+  coord_fixed()
+downvenn
+```
+
+This is, however, not very informative, visually. Maybe with `ggVennDiagram`?
+
+### Venn diagrams using `ggVennDiagram`
+
+From the CRAN [readme](https://cran.r-project.org/web/packages/ggVennDiagram/readme/README.html):
 
 ```{r}
-
-# extract genes with abs(log2FC)
-define_regulation <- function(x, fc_thresh) {
-  select_Significant_Genes <- x %>% 
-    filter(padj <= 0.05) %>%
-    filter(log2FoldChange %][% c(-fc_thresh, fc_thresh))
-  
-  select_Significant_Genes[, paste0('reg@abs(log2fc)>', fc_thresh)] <- cut(
-    select_Significant_Genes$log2FoldChange, c(-Inf,0,Inf), c("DOWN", "UP")
-    )
- # Only for adding gene names if necessary
-   select_Significant_Genes <- merge(select_Significant_Genes, dlist, by=1, all.x = TRUE)
-  return(select_Significant_Genes)
-}
-
+up <- list(`*da^RNAi^*`    = upreg[upreg$`*da^RNAi^*`,]$ensemblGeneID,
+           `*da^OVEX^*`    = upreg[upreg$`*da^OVEX^*`,]$ensemblGeneID,
+           `*da:da^OVEX^*` = upreg[upreg$`*da:da^OVEX^*`,]$ensemblGeneID,
+           `*scute^OVEX^*` = upreg[upreg$`*scute^OVEX^*`,]$ensemblGeneID)
+upvd <- ggVennDiagram(up) +
+  scale_fill_gradient(low='white',
+                      high = cet_pal(n = 2, name = "cbd1", alpha = 1)[[2]])
+upvd
 ```
 
 
 
-
-
-
-
-
 ```{r}
-
-
-upregulation <- function(select_Significant_Genes) {
-  upregulation <- select_Significant_Genes %>% 
-    filter(log2FoldChange >= 1) %>%
-    dplyr::select(matches("ensembl|external"))
-  upregulation$upregulation <- 1
-
-  return(upregulation)
-}
-
-downregulation <- function(select_Significant_Genes) {
-    downregulation <- select_Significant_Genes %>% 
-      filter(log2FoldChange <= -1) %>%
-      dplyr::select(matches("ensembl|external"))
-    downregulation$downregulation <- 1
-    
-  return(downregulation)
-}
-
-# Create a data frame with the 4 datasets of regulation (da, Da:Da, sc and emcRNAi)
-complete_regulation <- function(reg_da,reg_2D,reg_sc,reg_emc) {
-  
-  complete_regulation <- merge(reg_da, reg_2D, by=1, all=TRUE)
-  complete_regulation <- merge(complete_regulation, reg_sc, by=1, all=TRUE)
-  colnames(complete_regulation) <- c("ensembleGeneID","da","DaDa","sc")
-  rownames(complete_regulation) <- complete_regulation$ensembleGeneID
-  complete_regulation$ensembleGeneID <- NULL
-  
-  
-  complete_regulation[is.na(complete_regulation)] <- 0
-  
-  return(complete_regulation)
-}
-
-likes <- function(samples, regu = complete_downregulation) {
-  ppl <- regu
-  names(ppl) <- c("d", "dd", "sc", "emc")
-  for (i in 1:length(samples)) {
-    ppl <- subset(ppl, ppl[samples[i]] == T)
-  }
-  nrow(ppl)
-}
-
-plotConditions <- function(a, ...) {
-  grid.newpage()
-  if (length(a) == 1) {
-    out <- draw.single.venn(likes(a), ...)
-  }
-  if (length(a) == 2) {
-    out <- draw.pairwise.venn(likes(a[1]), likes(a[2]), likes(a[1:2]), ...)
-  }
-  if (length(a) == 3) {
-    out <- draw.triple.venn(likes(a[1]), likes(a[2]), likes(a[3]), likes(a[1:2]), 
-                            likes(a[2:3]), likes(a[c(1, 3)]), likes(a), ...)
-  }
-  if (length(a) == 4) {
-    out <- draw.quad.venn(likes(a[1]), likes(a[2]), likes(a[3]), likes(a[4]), 
-                          likes(a[1:2]), likes(a[c(1, 3)]), likes(a[c(1, 4)]), likes(a[2:3]), 
-                          likes(a[c(2, 4)]), likes(a[3:4]), likes(a[1:3]), likes(a[c(1, 2, 
-                                                                                     4)]), likes(a[c(1, 3, 4)]), likes(a[2:4]), likes(a), ...)
-  }
-  if (!exists("out")) 
-    out <- "Oops"
-  return(out)
-}
-
-
 
 ########################################################################
 
