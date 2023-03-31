@@ -1,0 +1,238 @@
+---
+title: "Visualisation of DESeq2 results with scatter plots"
+description: "DEG analysis based on DESeq2 and GSEA"
+principal investigator: "Joaquín de Navascués"
+researcher: "Aleix Puig, modified by Joaquín de Navascués"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: 'hide'
+    theme: readable
+    df_print: paged
+---
+```{r set-publication-theme, echo=FALSE, cache=FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+```
+
+```{r setup, echo = FALSE, cache = FALSE}
+knitr::opts_chunk$set(dev = 'png', 
+                      fig.align = 'center', fig.height = 5, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+```
+
+**Libraries needed:**
+```{r load_libraries, warning=FALSE, echo=FALSE}
+if (!require("librarian")) install.packages("librarian")
+# data
+librarian::shelf(dplyr, purrr, stringr, santoku, calibrate)
+# graphics
+librarian::shelf(RColorBrewer, cetcolor, ggplots2, EnhancedVolcano)
+# convenience
+librarian::shelf(here)
+setwd(here::here()) # to distinguish from dplyr::here()
+```
+
+**Path to definitive images (outside repo):**
+```{r define_dir2figs}
+figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
+                   paste0(tail(str_split(getwd(),'/')[[1]],1), '_figures')),
+                 collapse='/')
+dir.create(figdir, showWarnings = FALSE)
+```
+
+
+# RNAseq results visualisation with scatter plots
+
+
+## 1 Getting ready
+
+
+This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and gene symbol:
+```{r load_DEG_data}
+# experimental design and labels
+targets <- readRDS('output/targets.RDS')
+# DEG data
+DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
+DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
+DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
+ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
+# gene IDs and symbols
+ensembl = useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
+                     dataset="dmelanogaster_gene_ensembl",
+                     host = "https://oct2022.archive.ensembl.org")
+filters = listFilters(ensembl)       # defines filters for specific queries
+attributes = listAttributes(ensembl) # defines features tro show
+gene_list <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ensembl)
+rownames(gene_list) <- gene_list$ensemblGeneID
+```
+
+```{r extract_regulated_sets}
+extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
+  # fc_thresh must be a positive number
+  # list_of_degs is a list of dataframes
+  # names_degs is a list of strings
+  # they must have the same length
+  reg_lvl <- paste0(' reg@log~2~FC≥', fc_thresh)
+  breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
+  regulated_sets <- NULL
+  for (l in 1:length(list_of_degs)) {
+    degs_na <- dplyr::select(list_of_degs[[l]], c(log2FoldChange, padj, ensemblGeneID))
+    # better not pass NAs to kiru
+    degs <- na.omit(degs_na)
+    # filter by log2FC threshold
+    degs$reg <- 
+      kiru(
+        degs$log2FoldChange,
+        breaks = breaks,
+        extend = TRUE,
+        labels=c("down", "non", "up")
+      )
+    # filter by p-val
+    degs$reg <- as.character(degs$reg)
+    x <- 1:nrow(degs)
+    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
+    # recover NAs as non-regulataed
+    added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
+    added_nas$reg <- 'non'
+    degs <- rbind(degs, added_nas)
+    # store reg status
+    #rownames(degs) <- degs$ensemblGeneID
+    degs[ , names_degs[[l]] ] <- degs$reg
+    regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
+  }
+  regulated_sets <- purrr::reduce(regulated_sets, full_join, by='ensemblGeneID')
+  rownames(regulated_sets) <- regulated_sets$ensemblGeneID
+  regulated_sets <- dplyr::select(regulated_sets, -ensemblGeneID)
+  return(regulated_sets)
+}
+```
+
+```{r}
+list_of_degs <- list(DaKD_deg, DaOE_deg, DaDaOE_deg, ScOE_deg)
+names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
+  # as.character(targets[targets$Condition=='DaKD','condition_md'][[1]]),
+  # as.character(targets[targets$Condition=='DaOE','condition_md'][[1]]),
+  # as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
+  # as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
+  # )
+regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=2)
+
+tables <- list("2D" = DaDaOE_deg, "da" = DaOE_deg, "sc" = ScOE_deg, 'kd'=DaKD_deg)
+tables <- map(tables, function(df) merge(df, gene_list, by=1))
+significant_tables <- map(tables, function(df) mutate(df, threshold = padj <0.05 & abs(log2FoldChange) > 1))
+
+# this needs to become more updated (e.g. FlyCellAtlas, Sox TFs, etc)
+selected_genes <- c("ac", "sc", "l(1)sc", "emc", "ase", "da", "phyl", "ttk", "chn", "osa", "esg", "zfh1", "sna", "Sox21a", "fkh", "Dl", "gro", "cbt", "numb", "N", "H", "Su(H)", "neur", "E(spl)m5-HLH", "E(spl)m4-BFM", "E(spl)mbeta-HLH", "E(spl)mdelta-HLH", "E(spl)m2-BFM", "E(spl)m7-HLH", "E(spl)m8-HLH", "E(spl)m3-HLH", "E(spl)malpha-BFM", "E(spl)mgamma-HLH", "E(spl)m6-BFM", "pros", "nub", "Myo31DF", "h", "hdc", "ck", "spen", "Cdk1", "spdo", "polo", "pon", "GATAe", "GATAd", "grn", "pnr", "srp", "ush", "mira", "Zip71B", "Smvt", "Oatp58Dc", "Myc", "bun", "peb", "cic", "Rel", "HmgD", "msn", "klu", "lola", "Lrch", "zip", "insc")
+
+#selected_genes <- c("egr", "grnd", "bsk", "Diap1", "Diap2", "hid", "Dronc", "p53", "Drice", "Duox") # Cell death genes
+```
+
+
+## 2 Volcano plots
+
+
+### First version
+
+```{r plot_volcano_1, fig.height=5}
+#Define table to plot
+df <- tables$sc
+
+# Make a basic volcano plot
+with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
+     plot(log2FoldChange, -log10(padj),
+          pch=20, cex=.35, col="#999999",
+          main=list("sc", cex=3.5),
+          xlim=c( min(df$log2FoldChange, na.rm = TRUE),
+                  max(df$log2FoldChange, na.rm = TRUE) ),
+          ylim=c( 0,
+                  max(-log10(subset(df, padj > 0)$padj), na.rm = TRUE) )
+          )
+     )
+
+# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
+with(subset(df, padj<.05 & abs(log2FoldChange)>1),
+     points(log2FoldChange, -log10(padj),
+            pch=20, cex=.35, col="#e2aa3b"))
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     points(log2FoldChange, -log10(padj),
+            pch=20, cex=.9, col="#721f0f"))
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     points(log2FoldChange, -log10(padj),
+            pch=20, cex=.9, col="#18631a"))
+
+# Label points with the textxy function from the calibrate plot
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     textxy(log2FoldChange, -log10(padj),volv
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#721f0f"))
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     textxy(log2FoldChange, -log10(padj),
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#18631a"))
+```
+
+
+### Second version
+
+
+```{r}
+
+# Make a basic volcano plot
+with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
+     plot(log10(mean_tpm),
+          log2FoldChange,
+          pch=20, cex=.35, col=("#99999965"),
+          main=list("Sc", cex=3.1),
+          ylim=c(min(df$log2FoldChange, na.rm = TRUE),
+                 max(df$log2FoldChange, na.rm = TRUE))))
+
+# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
+with(subset(df, padj<.05 & abs(log2FoldChange)>1),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.35, col="#e2aa3b"))
+
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.9, col="#721f0f"))
+
+with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     points(log10(mean_tpm),
+            log2FoldChange,
+            pch=20, cex=.9, col="#18631a"))
+
+abline(h=c(1,-1), lwd=c(2, 2))
+
+# Label points with the textxy function from the calibrate plot
+
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
+     textxy(log10(mean_tpm),
+            log2FoldChange,
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#721f0f"))
+plot()
+
+with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
+     textxy(log10(mean_tpm),
+            log2FoldChange,
+            labs=external_gene_name,
+            cex=0.9, font=2, col="#18631a"))
+
+```
+
+### Third version, with the `EnhancedVolcano` package
+
+https://www.bioconductor.org/packages/devel/bioc/vignettes/EnhancedVolcano/inst/doc/EnhancedVolcano.html
+
+### Fourth version: just with `ggplot2` and `ggrepel`
+
+https://github.com/erikaduan/r_tips/blob/master/tutorials/dv-volcano_plots_with_ggplot/dv-volcano_plots_with_ggplot.md
+https://rpkgs.datanovia.com/ggpubr/reference/ggmaplot.html
+
+this could also work for the MA plot
+
+
+## MA plots
