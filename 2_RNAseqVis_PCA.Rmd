@@ -25,7 +25,8 @@ knitr::opts_chunk$set(dev = 'png',
 **Libraries needed:**
 ```{r, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
-librarian::shelf(tibble, DESeq2, stringr)
+# data
+librarian::shelf(tibble, DESeq2, stringr, matrixStats, limma)
 # graphics
 librarian::shelf(ggplot2, ggthemes, ggtext, ggrepel)
 # convenience
@@ -54,7 +55,7 @@ rawCounts <- readRDS('output/rawCounts.RDS')
 
 Let us see what the variance looks like in `rawCounts`:
 ```{r}
-var_rawCounts <- matrixStats::rowVars(as.matrix(rawCounts), rm.na=TRUE)
+var_rawCounts <- rowVars(as.matrix(rawCounts), rm.na=TRUE)
 var_rawCounts <- var_rawCounts [ var_rawCounts < max(var_rawCounts) ]
 avg_rawCounts <- rowMeans(as.matrix(rawCounts))
 avg_rawCounts <- avg_rawCounts [ avg_rawCounts < max(avg_rawCounts) ]
@@ -225,7 +226,7 @@ vsd <- readRDS('output/vst_pseudocounts.RDS')
 # remove rows with very little variability
 # vsd_pca <- assay(vsd)[
 #   rowSums(rawCounts[-1] != rawCounts[[2]], na.rm = TRUE) != 0, ]
-var_vsd <- matrixStats::rowVars(assay(vsd), rm.na=TRUE)
+var_vsd <- rowVars(assay(vsd), rm.na=TRUE)
 #var_rawCounts <- var_rawCounts [ var_rawCounts < max(var_rawCounts) ]
 avg_vsd <- rowMeans(assay(vsd))
 #avg_rawCounts <- avg_rawCounts [ avg_rawCounts < max(avg_rawCounts) ]
@@ -370,7 +371,7 @@ So we do:
 ```{r}
 
 # min(tpmNormalisedCounts) is 0 so we need to add 1 for log transform
-tpm_log_bcorr <- limma::removeBatchEffect(
+tpm_log_bcorr <- removeBatchEffect(
   <- log2(tpmNormalisedCounts+1),
   batch=vsd$batch,
   design=model.matrix(~condition, colData(vsd) )

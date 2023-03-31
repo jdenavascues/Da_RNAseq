@@ -54,22 +54,40 @@ This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and ge
 # experimental design and labels
 targets <- readRDS('output/targets.RDS')
 # DEG data
-DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
 DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
 DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
+DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
 ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
-# gene IDs and symbols
-ensembl = useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
-                     dataset="dmelanogaster_gene_ensembl",
-                     host = "https://oct2022.archive.ensembl.org")
-filters = listFilters(ensembl)       # defines filters for specific queries
-attributes = listAttributes(ensembl) # defines features tro show
-gene_list <- getBM(attributes=c('ensembl_gene_id', 'external_gene_name'), mart = ensembl)
-rownames(gene_list) <- gene_list$ensemblGeneID
+tpm_bcorr <- readRDS('output/tmp_batch_corrected.RDS')
 ```
 
-```{r extract_regulated_sets}
-extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
+So that we can see the DEdata, e.g.:
+```{r, data_cleanup}
+# get TPM means by condition, as a list of named vectors
+deg.conditions <- list("DaKD", "DaOE", "DaDaOE", "ScOE")
+tpmMeans <- lapply(deg.conditions, function(x)
+  rowMeans(tpm_bcorr[, targets[targets$Condition==x,'sampleIDs']]) )
+names(tpmMeans) <- deg.conditions
+# make ensembl IDs rownames, remove unwanted cols
+wanted_cols <- c('gene_symbol','log2FoldChange','padj')
+cleanup <- function(df, wanted_cols, condition) {
+  rownames(df) <- df$Row.names
+  df <- df[, wanted_cols]
+  df2 <- data.frame(tpmMeans[condition])
+  names(df2) <- 'meanTpm' # needed to avoid 'condition' being the column name
+  df <- merge(df, df2, by=0)
+  rownames(df) <- df$Row.names
+  df <- df[,-1] # remove the new Row.names column
+  return(df)
+}
+DaKD_deg   <- cleanup(DaKD_deg, wanted_cols, 'DaKD')
+DaOE_deg   <- cleanup(DaOE_deg, wanted_cols, 'DaOE')
+DaDaOE_deg <- cleanup(DaDaOE_deg, wanted_cols, 'DaDaOE')
+ScOE_deg   <- cleanup(ScOE_deg, wanted_cols, 'ScOE')
+```
+
+```{r extract_regulated_sets2}
+extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, columns) {
   # fc_thresh must be a positive number
   # list_of_degs is a list of dataframes
   # names_degs is a list of strings
@@ -78,7 +96,7 @@ extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
   breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
   regulated_sets <- NULL
   for (l in 1:length(list_of_degs)) {
-    degs_na <- dplyr::select(list_of_degs[[l]], c(log2FoldChange, padj, ensemblGeneID))
+    degs_na <- dplyr::select(list_of_degs[[l]], columns)
     # better not pass NAs to kiru
     degs <- na.omit(degs_na)
     # filter by log2FC threshold
@@ -109,7 +127,7 @@ extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
 }
 ```
 
-```{r}
+```{r, warning=FALSE}
 list_of_degs <- list(DaKD_deg, DaOE_deg, DaDaOE_deg, ScOE_deg)
 names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
   # as.character(targets[targets$Condition=='DaKD','condition_md'][[1]]),
@@ -117,7 +135,8 @@ names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
   # as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
   # as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
   # )
-regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=2)
+cols.oi <- c('log2FoldChange', 'padj', 'meanTpm', 'gene_symbol')
+regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=2, columns=cols.oi)
 
 tables <- list("2D" = DaDaOE_deg, "da" = DaOE_deg, "sc" = ScOE_deg, 'kd'=DaKD_deg)
 tables <- map(tables, function(df) merge(df, gene_list, by=1))
