@@ -1,0 +1,78 @@
+﻿gene_symbol;process;molecular_info;fate;expn_EE;expn_EC;expn_ISC;expn_EB;expn_PEE
+ac;transcription;bHLH;EE;F;F;F;F;T
+sc;transcription;bHLH;EE;F;F;F;F;T
+l(1)sc;transcription;bHLH;NA;F;F;F;F;F
+emc;transcription;bHLH;EC;F;T;F;T;F
+ase;transcription;bHLH;EE;F;F;F;F;T
+da;transcription;bHLH;ISC;T;T;T;T;T
+phyl;NA;NA;EE;F;F;F;F;T
+ttk;NA;NA;EE;F;F;F;F;T
+chn;transcription;NA;;F;F;F;F;F
+osa;transcription;NA;ISC;F;F;F;F;F
+esg;transcription;NA;ISC;F;F;T;T;F
+zfh1;transcription;NA;ISC;F;F;T;T;F
+sna;transcription;NA;ISC;F;F;T;T;F
+Sox21a;transcription;NA;;F;F;T;T;F
+fkh;transcription;NA;;F;F;F;F;F
+Dl;Notch signalling;NA;;F;F;T;F;F
+gro;Notch signalling;NA;;F;F;F;F;F
+cbt;Notch signalling;NA;;F;F;F;F;F
+numb;NA;NA;EE;F;F;F;F;F
+N;Notch signalling;NA;;F;F;T;T;F
+H;Notch signalling;NA;;F;F;F;F;F
+Su(H);Notch signalling;NA;;F;F;F;F;F
+neur;Notch signalling;NA;;F;F;F;F;F
+E(spl)m5-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)m4-BFM;Notch signalling;NA;;F;F;F;F;F
+E(spl)mbeta-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)mdelta-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)m2-BFM;Notch signalling;NA;;F;F;F;F;F
+E(spl)m7-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)m8-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)m3-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)malpha-BFM;Notch signalling;NA;;F;F;F;F;F
+E(spl)mgamma-HLH;Notch signalling;NA;;F;F;F;F;F
+E(spl)m6-BFM;Notch signalling;NA;;F;F;F;F;F
+pros;transcription;NA;;F;F;F;F;F
+nub;transcription;NA;;F;F;F;F;F
+Myo31DF;NA;NA;;F;F;F;F;F
+h;transcription;NA;;F;F;F;F;F
+hdc;NA;NA;;F;F;F;F;F
+ck;NA;NA;;F;F;F;F;F
+spen;;NA;;F;F;F;F;F
+Cdk1;;NA;;F;F;F;F;F
+spdo;;NA;;F;F;F;F;F
+polo;cell cycle;NA;;F;F;F;F;F
+pon;;NA;;F;F;F;F;F
+GATAe;transcription;GATA;;F;F;F;F;F
+GATAd;transcription;GATA;;F;F;F;F;F
+grn;transcription;GATA;;F;F;F;F;F
+pnr;transcription;GATA;;F;F;F;F;F
+srp;transcription;GATA;;F;F;F;F;F
+ush;transcription;GATA;;F;F;F;F;F
+mira;NA;NA;;F;F;F;F;F
+Zip71B;transcription;NA;;F;F;F;F;F
+Smvt;;NA;;F;F;F;F;F
+Oatp58Dc;;NA;;F;F;F;F;F
+Myc;;NA;;F;F;F;F;F
+bun;;NA;;F;F;F;F;F
+peb;;NA;;F;F;F;F;F
+cic;EGFR signalling;NA;;F;F;F;F;F
+Rel;;NA;;F;F;F;F;F
+HmgD;;NA;;F;F;F;F;F
+msn;;NA;;F;F;F;F;F
+klu;transcription;NA;;F;F;F;F;F
+lola;transcription;NA;;F;F;F;F;F
+Lrch;;NA;;F;F;F;F;F
+zip;;NA;;F;F;F;F;F
+insc;;NA;;F;F;F;F;F
+egr;;NA;cell death;F;F;F;F;F
+grnd;;NA;cell death;F;F;F;F;F
+bsk;;NA;cell death;F;F;F;F;F
+Diap1;;NA;cell death;F;F;F;F;F
+Diap2;;NA;cell death;F;F;F;F;F
+hid;;NA;cell death;F;F;F;F;F
+Dronc;;NA;cell death;F;F;F;F;F
+p53;;NA;cell death;F;F;F;F;F
+Drice;;NA;cell death;F;F;F;F;F
+Duox;;NA;cell death;F;F;F;F;F

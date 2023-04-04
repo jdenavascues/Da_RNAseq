@@ -26,9 +26,9 @@ knitr::opts_chunk$set(dev = 'png',
 ```{r load_libraries, warning=FALSE, echo=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
-librarian::shelf(dplyr, purrr, stringr, santoku, calibrate)
+librarian::shelf(readxl, dplyr, purrr, stringr, santoku, calibrate)
 # graphics
-librarian::shelf(RColorBrewer, cetcolor, ggplots2, EnhancedVolcano)
+librarian::shelf(RColorBrewer, cetcolor, ggplots2, ggpubr)
 # convenience
 librarian::shelf(here)
 setwd(here::here()) # to distinguish from dplyr::here()
@@ -58,36 +58,52 @@ DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
 DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
 DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
 ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
-tpm_bcorr <- readRDS('output/tmp_batch_corrected.RDS')
+head(ScOE_deg, 1)
 ```
 
-So that we can see the DEdata, e.g.:
+As discussed previously, we do not really need TPM values here, as the `baseMean` from the `DESeq2` normalisation does the work just as well and .
+Calculate the `meanTpm` per condition:
+# ```{r, calc_tpm}
+# # get TPM means by condition, as a list of named vectors
+# deg.conditions <- list("DaKD", "DaOE", "DaDaOE", "ScOE", "Control")
+# tpmMeans <- lapply(deg.conditions, function(x)
+#   rowMeans(tpm_bcorr[, targets[targets$Condition==x,'sampleIDs']]) )
+# names(tpmMeans) <- deg.conditions
+# head(tpmMeans[[1]])
+# ```
+
+Add it to the DEG data and remove unwanted columns:
 ```{r, data_cleanup}
-# get TPM means by condition, as a list of named vectors
-deg.conditions <- list("DaKD", "DaOE", "DaDaOE", "ScOE")
-tpmMeans <- lapply(deg.conditions, function(x)
-  rowMeans(tpm_bcorr[, targets[targets$Condition==x,'sampleIDs']]) )
-names(tpmMeans) <- deg.conditions
-# make ensembl IDs rownames, remove unwanted cols
-wanted_cols <- c('gene_symbol','log2FoldChange','padj')
-cleanup <- function(df, wanted_cols, condition) {
-  rownames(df) <- df$Row.names
+# make ensembl IDs *also* rownames, remove unwanted cols
+wanted_cols <- c('gene_symbol','log2FoldChange','padj', 'ensemblGeneID', 'baseMean')
+cleanup <- function(df, wanted_cols, condition, control_tmp) {
   df <- df[, wanted_cols]
-  df2 <- data.frame(tpmMeans[condition])
-  names(df2) <- 'meanTpm' # needed to avoid 'condition' being the column name
-  df <- merge(df, df2, by=0)
+  df2 <- data.frame(tpmMeans[condition],
+                    ensemblGeneID = names(tpmMeans[condition][[1]]) )
+  names(df2)[[1]] <- 'baseMean'
+  df3 <- data.frame(baseMean_ref  = tpmMeans$Control,
+                    ensemblGeneID = names(tpmMeans[condition][[1]]) )
+  
+  df <- list(df, df2, df3) %>%
+               reduce(full_join, by='ensemblGeneID')
+  # df <- merge(df, df2, by=0)
+  # df <- merge(df, , by=0)
   rownames(df) <- df$Row.names
-  df <- df[,-1] # remove the new Row.names column
+  df$Row.names <- NULL
   return(df)
 }
-DaKD_deg   <- cleanup(DaKD_deg, wanted_cols, 'DaKD')
-DaOE_deg   <- cleanup(DaOE_deg, wanted_cols, 'DaOE')
-DaDaOE_deg <- cleanup(DaDaOE_deg, wanted_cols, 'DaDaOE')
-ScOE_deg   <- cleanup(ScOE_deg, wanted_cols, 'ScOE')
+DaKD_deg   <- cleanup(DaKD_deg, wanted_cols, 'DaKD', tpmMeans$Control)
+DaOE_deg   <- cleanup(DaOE_deg, wanted_cols, 'DaOE', tpmMeans$Control)
+DaDaOE_deg <- cleanup(DaDaOE_deg, wanted_cols, 'DaDaOE', tpmMeans$Control)
+ScOE_deg   <- cleanup(ScOE_deg, wanted_cols, 'ScOE', tpmMeans$Control)
+
+head(DaKD_deg)
 ```
 
-```{r extract_regulated_sets2}
-extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, columns) {
+Now make a dataframe with the status of each gene (up/down/non-regulated) for each condition:
+```{r extract_regulated_sets2, warning=FALSE}
+# first define the function
+extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, cols) {
   # fc_thresh must be a positive number
   # list_of_degs is a list of dataframes
   # names_degs is a list of strings
@@ -96,10 +112,10 @@ extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, colum
   breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
   regulated_sets <- NULL
   for (l in 1:length(list_of_degs)) {
-    degs_na <- dplyr::select(list_of_degs[[l]], columns)
+    degs_na <- dplyr::select(list_of_degs[[l]], all_of(cols))
     # better not pass NAs to kiru
     degs <- na.omit(degs_na)
-    # filter by log2FC threshold
+    # filter by log2FC threshold, create `reg`(ulated) col with up/down/non
     degs$reg <- 
       kiru(
         degs$log2FoldChange,
@@ -108,15 +124,14 @@ extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, colum
         labels=c("down", "non", "up")
       )
     # filter by p-val
-    degs$reg <- as.character(degs$reg)
+    degs$reg <- as.character(degs$reg) # remove factor
     x <- 1:nrow(degs)
-    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
+    degs$reg <- ifelse(degs[x,'padj']<0.05, degs[x,'reg'], 'non')
     # recover NAs as non-regulataed
     added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
     added_nas$reg <- 'non'
     degs <- rbind(degs, added_nas)
     # store reg status
-    #rownames(degs) <- degs$ensemblGeneID
     degs[ , names_degs[[l]] ] <- degs$reg
     regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
   }
@@ -125,27 +140,20 @@ extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, colum
   regulated_sets <- dplyr::select(regulated_sets, -ensemblGeneID)
   return(regulated_sets)
 }
+
+# now use the function 
+list_of_degs <- list('kd'=DaKD_deg, 'da'=DaOE_deg,
+                     'dada'=DaDaOE_deg, 'sc'=ScOE_deg)
+names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
+cols.oi <- c('log2FoldChange', 'padj', 'meanTpm',
+             'gene_symbol', 'ensemblGeneID')
+regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=2, cols=cols.oi)
+head(regs)
 ```
 
-```{r, warning=FALSE}
-list_of_degs <- list(DaKD_deg, DaOE_deg, DaDaOE_deg, ScOE_deg)
-names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
-  # as.character(targets[targets$Condition=='DaKD','condition_md'][[1]]),
-  # as.character(targets[targets$Condition=='DaOE','condition_md'][[1]]),
-  # as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
-  # as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
-  # )
-cols.oi <- c('log2FoldChange', 'padj', 'meanTpm', 'gene_symbol')
-regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=2, columns=cols.oi)
-
-tables <- list("2D" = DaDaOE_deg, "da" = DaOE_deg, "sc" = ScOE_deg, 'kd'=DaKD_deg)
-tables <- map(tables, function(df) merge(df, gene_list, by=1))
-significant_tables <- map(tables, function(df) mutate(df, threshold = padj <0.05 & abs(log2FoldChange) > 1))
-
-# this needs to become more updated (e.g. FlyCellAtlas, Sox TFs, etc)
-selected_genes <- c("ac", "sc", "l(1)sc", "emc", "ase", "da", "phyl", "ttk", "chn", "osa", "esg", "zfh1", "sna", "Sox21a", "fkh", "Dl", "gro", "cbt", "numb", "N", "H", "Su(H)", "neur", "E(spl)m5-HLH", "E(spl)m4-BFM", "E(spl)mbeta-HLH", "E(spl)mdelta-HLH", "E(spl)m2-BFM", "E(spl)m7-HLH", "E(spl)m8-HLH", "E(spl)m3-HLH", "E(spl)malpha-BFM", "E(spl)mgamma-HLH", "E(spl)m6-BFM", "pros", "nub", "Myo31DF", "h", "hdc", "ck", "spen", "Cdk1", "spdo", "polo", "pon", "GATAe", "GATAd", "grn", "pnr", "srp", "ush", "mira", "Zip71B", "Smvt", "Oatp58Dc", "Myc", "bun", "peb", "cic", "Rel", "HmgD", "msn", "klu", "lola", "Lrch", "zip", "insc")
-
-#selected_genes <- c("egr", "grnd", "bsk", "Diap1", "Diap2", "hid", "Dronc", "p53", "Drice", "Duox") # Cell death genes
+Load `genes_of_interest`:
+```{r load_GOI}
+genes_of_interest <- read_excel('resources/genes_of_interest.xlsx')
 ```
 
 
@@ -154,9 +162,10 @@ selected_genes <- c("ac", "sc", "l(1)sc", "emc", "ase", "da", "phyl", "ttk", "ch
 
 ### First version
 
+
 ```{r plot_volcano_1, fig.height=5}
 #Define table to plot
-df <- tables$sc
+df <- list_of_degs$kd
 
 # Make a basic volcano plot
 with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
