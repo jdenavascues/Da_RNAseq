@@ -28,7 +28,7 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(readxl, dplyr, purrr, stringr, santoku, calibrate)
 # graphics
-librarian::shelf(RColorBrewer, cetcolor, ggplots2, ggpubr)
+librarian::shelf(cetcolor, ggplots2, ggpubr, ggtheme, ggtext)
 # convenience
 librarian::shelf(here)
 setwd(here::here()) # to distinguish from dplyr::here()
@@ -61,44 +61,7 @@ ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
 head(ScOE_deg, 1)
 ```
 
-As discussed previously, we do not really need TPM values here, as the `baseMean` from the `DESeq2` normalisation does the work just as well and .
-Calculate the `meanTpm` per condition:
-# ```{r, calc_tpm}
-# # get TPM means by condition, as a list of named vectors
-# deg.conditions <- list("DaKD", "DaOE", "DaDaOE", "ScOE", "Control")
-# tpmMeans <- lapply(deg.conditions, function(x)
-#   rowMeans(tpm_bcorr[, targets[targets$Condition==x,'sampleIDs']]) )
-# names(tpmMeans) <- deg.conditions
-# head(tpmMeans[[1]])
-# ```
-
-Add it to the DEG data and remove unwanted columns:
-```{r, data_cleanup}
-# make ensembl IDs *also* rownames, remove unwanted cols
-wanted_cols <- c('gene_symbol','log2FoldChange','padj', 'ensemblGeneID', 'baseMean')
-cleanup <- function(df, wanted_cols, condition, control_tmp) {
-  df <- df[, wanted_cols]
-  df2 <- data.frame(tpmMeans[condition],
-                    ensemblGeneID = names(tpmMeans[condition][[1]]) )
-  names(df2)[[1]] <- 'baseMean'
-  df3 <- data.frame(baseMean_ref  = tpmMeans$Control,
-                    ensemblGeneID = names(tpmMeans[condition][[1]]) )
-  
-  df <- list(df, df2, df3) %>%
-               reduce(full_join, by='ensemblGeneID')
-  # df <- merge(df, df2, by=0)
-  # df <- merge(df, , by=0)
-  rownames(df) <- df$Row.names
-  df$Row.names <- NULL
-  return(df)
-}
-DaKD_deg   <- cleanup(DaKD_deg, wanted_cols, 'DaKD', tpmMeans$Control)
-DaOE_deg   <- cleanup(DaOE_deg, wanted_cols, 'DaOE', tpmMeans$Control)
-DaDaOE_deg <- cleanup(DaDaOE_deg, wanted_cols, 'DaDaOE', tpmMeans$Control)
-ScOE_deg   <- cleanup(ScOE_deg, wanted_cols, 'ScOE', tpmMeans$Control)
-
-head(DaKD_deg)
-```
+As discussed previously, we do not really need TPM values here, as the `baseMean` from the `DESeq2` normalisation does the work just as well and is more internally consistent.
 
 Now make a dataframe with the status of each gene (up/down/non-regulated) for each condition:
 ```{r extract_regulated_sets2, warning=FALSE}
@@ -145,10 +108,15 @@ extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, cols)
 list_of_degs <- list('kd'=DaKD_deg, 'da'=DaOE_deg,
                      'dada'=DaDaOE_deg, 'sc'=ScOE_deg)
 names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
-cols.oi <- c('log2FoldChange', 'padj', 'meanTpm',
+cols.oi <- c('log2FoldChange', 'padj', 'baseMean',
              'gene_symbol', 'ensemblGeneID')
-regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=2, cols=cols.oi)
-head(regs)
+fc_thresh <- 2
+regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=fc_thresh, cols=cols.oi)
+
+DaKD_deg$reg <- regs$DaKD
+DaOE_deg$reg <- regs$DaOE
+DaDaOE_deg$reg <- regs$DaDaOE
+ScOE_deg$reg <- regs$ScOE
 ```
 
 Load `genes_of_interest`:
@@ -157,10 +125,73 @@ genes_of_interest <- read_excel('resources/genes_of_interest.xlsx')
 ```
 
 
-## 2 Volcano plots
+## 2 MA plots using `ggpubr`
 
 
-### First version
+```{r MA_plot}
+goi_kd <- genes_of_interest[genes_of_interest$gene_symbol %in%
+                              DaKD_deg[DaKD_deg$reg!='non','gene_symbol'],]$gene_symbol
+ma <- ggmaplot(
+  DaKD_deg,
+  fdr = 0.05,
+  fc = fc_thresh,
+  genenames = list_of_degs$kd$gene_symbol,
+  size = 2,
+  alpha = 0.5,
+  seed = 42,
+  font.label = c(12, "plain", "black"),
+  label.rectangle = FALSE,
+  palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3],
+              cet_pal(n = 3, name = "cbd1", alpha = 1)[1],
+              "#AAAAAA"),
+  top = 0,
+  main = '*esg > da^RNAi^*',
+  xlab = "log~2~(mean expression)",
+  ylab = "log~2~(fold change)",
+  ggtheme = theme_classic(),
+  legend = 'top'
+)
+ma +
+  geom_text_repel(data = DaKD_deg[(DaKD_deg$gene_symbol %in% goi_kd) &
+                                    (DaKD_deg$log2FoldChange>0),],
+                  aes(x = log2(baseMean),
+                      y = log2FoldChange,
+                      label = gene_symbol,
+                      segment.square  = FALSE,
+                      segment.inflect = TRUE),
+                  color = '#6E5C03',
+                  box.padding = 0.5,
+                  point.padding = 0.5,
+                  nudge_x = 4,
+                  nudge_y = 5,
+                  force             = 0.5,
+                  max.overlaps = Inf) +
+  geom_text_repel(data = DaKD_deg[(DaKD_deg$gene_symbol %in% goi_kd) &
+                                    (DaKD_deg$log2FoldChange<0),],
+                  aes(x = log2(baseMean), y = log2FoldChange, label = gene_symbol),
+                  color = '#0565AF',
+                  box.padding = 0.5,
+                  point.padding = 0.5,
+                  nudge_x = 4,
+                  nudge_y = -5,
+                  force             = 0.5,
+                  max.overlaps = Inf) +
+  theme(plot.title = element_markdown(face = 'bold', size = 14,
+                                      hjust = 0, vjust = 1),
+        plot.title.position = 'panel',
+        axis.title.x = element_markdown(),
+        axis.title.y = element_markdown())
+```
+
+
+
+
+
+
+
+
+
+
 
 
 ```{r plot_volcano_1, fig.height=5}
