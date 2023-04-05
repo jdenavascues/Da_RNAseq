@@ -2,7 +2,7 @@
 title: "Visualisation of DESeq2 results with scatter plots"
 description: "DEG analysis based on DESeq2 and GSEA"
 principal investigator: "Joaquín de Navascués"
-researcher: "Aleix Puig, modified by Joaquín de Navascués"
+researcher: "Joaquín de Navascués"
 output: 
   html_document:
     toc: true
@@ -28,7 +28,7 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(readxl, dplyr, purrr, stringr, santoku, calibrate)
 # graphics
-librarian::shelf(cetcolor, ggplots2, ggpubr, ggtheme, ggtext)
+librarian::shelf(cetcolor, ggplots2, ggpubr, ggtheme, ggtext, ggrepel)
 # convenience
 librarian::shelf(here)
 setwd(here::here()) # to distinguish from dplyr::here()
@@ -61,9 +61,9 @@ ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
 head(ScOE_deg, 1)
 ```
 
-As discussed previously, we do not really need TPM values here, as the `baseMean` from the `DESeq2` normalisation does the work just as well and is more internally consistent.
+As discussed previously, we do not really need TPM values here, as the `baseMean` from the `DESeq2` normalisation does the work just as well and is more 'internally consistent'.
 
-Now make a dataframe with the status of each gene (up/down/non-regulated) for each condition:
+Now make a data frame with the status of each gene (up/down/non-regulated) for each condition:
 ```{r extract_regulated_sets2, warning=FALSE}
 # first define the function
 extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, cols) {
@@ -113,6 +113,7 @@ cols.oi <- c('log2FoldChange', 'padj', 'baseMean',
 fc_thresh <- 2
 regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=fc_thresh, cols=cols.oi)
 
+# attach the results to the DEG data frame for each condition
 DaKD_deg$reg <- regs$DaKD
 DaOE_deg$reg <- regs$DaOE
 DaDaOE_deg$reg <- regs$DaDaOE
@@ -127,171 +128,269 @@ genes_of_interest <- read_excel('resources/genes_of_interest.xlsx')
 
 ## 2 MA plots using `ggpubr`
 
-
-```{r MA_plot}
-goi_kd <- genes_of_interest[genes_of_interest$gene_symbol %in%
-                              DaKD_deg[DaKD_deg$reg!='non','gene_symbol'],]$gene_symbol
-ma <- ggmaplot(
-  DaKD_deg,
-  fdr = 0.05,
-  fc = fc_thresh,
-  genenames = list_of_degs$kd$gene_symbol,
-  size = 2,
-  alpha = 0.5,
-  seed = 42,
-  font.label = c(12, "plain", "black"),
-  label.rectangle = FALSE,
-  palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3],
-              cet_pal(n = 3, name = "cbd1", alpha = 1)[1],
-              "#AAAAAA"),
-  top = 0,
-  main = '*esg > da^RNAi^*',
-  xlab = "log~2~(mean expression)",
-  ylab = "log~2~(fold change)",
-  ggtheme = theme_classic(),
-  legend = 'top'
-)
-ma +
-  geom_text_repel(data = DaKD_deg[(DaKD_deg$gene_symbol %in% goi_kd) &
-                                    (DaKD_deg$log2FoldChange>0),],
-                  aes(x = log2(baseMean),
-                      y = log2FoldChange,
-                      label = gene_symbol,
-                      segment.square  = FALSE,
-                      segment.inflect = TRUE),
-                  color = '#6E5C03',
-                  box.padding = 0.5,
-                  point.padding = 0.5,
-                  nudge_x = 4,
-                  nudge_y = 5,
-                  force             = 0.5,
-                  max.overlaps = Inf) +
-  geom_text_repel(data = DaKD_deg[(DaKD_deg$gene_symbol %in% goi_kd) &
-                                    (DaKD_deg$log2FoldChange<0),],
-                  aes(x = log2(baseMean), y = log2FoldChange, label = gene_symbol),
-                  color = '#0565AF',
-                  box.padding = 0.5,
-                  point.padding = 0.5,
-                  nudge_x = 4,
-                  nudge_y = -5,
-                  force             = 0.5,
-                  max.overlaps = Inf) +
-  theme(plot.title = element_markdown(face = 'bold', size = 14,
-                                      hjust = 0, vjust = 1),
-        plot.title.position = 'panel',
-        axis.title.x = element_markdown(),
-        axis.title.y = element_markdown())
-```
-
-
-
-
-
-
-
-
-
-
-
-
-```{r plot_volcano_1, fig.height=5}
-#Define table to plot
-df <- list_of_degs$kd
-
-# Make a basic volcano plot
-with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
-     plot(log2FoldChange, -log10(padj),
-          pch=20, cex=.35, col="#999999",
-          main=list("sc", cex=3.5),
-          xlim=c( min(df$log2FoldChange, na.rm = TRUE),
-                  max(df$log2FoldChange, na.rm = TRUE) ),
-          ylim=c( 0,
-                  max(-log10(subset(df, padj > 0)$padj), na.rm = TRUE) )
+Customise the looks so it matches the prior version of the paper:
+```{r MA_plot_customisation}
+ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
+                      md_label='*genotype^—^*', repulsion) {
+  # deg is the output of DESeq2 with an added column of gene symbols
+  # gene.symbols is that column
+  
+  # standard MA plot with `ggpubr`, using the CBD1 palette from `cetcolor` 
+  ma <- ggmaplot(
+    deg,
+    fdr = 0.05,
+    fc = fc_thresh,
+    genenames = deg$gene_symbols,
+    size = 2,
+    alpha = 0.5,
+    seed = NA,
+    font.label = c(16, "bold", "black"),
+    label.rectangle = FALSE,
+    palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3], # "#A89008"
+                cet_pal(n = 3, name = "cbd1", alpha = 1)[1], # "#3A90FE"
+                "#AAAAAA"),
+    top = 0,
+    main = NULL,
+    xlab = "log~2~(mean expression)",
+    ylab = "log~2~(fold change)",
+    ggtheme = theme_linedraw(),
+    legend = 'top'
+  )
+  
+  annotations <- data.frame(
+        xpos = floor(min(ggplot_build(ma)$layout$panel_params[[1]]$x.range)),
+        ypos = ceiling(max(abs(ggplot_build(ma)$layout$panel_params[[1]]$y.range))),
+        annotateText = md_label,
+        hjustvar = 0,
+        vjustvar = 1)
+  
+  return(ma +
+    # mark special genes if upreg
+    geom_text_repel(data = deg %>% filter(gene_symbol %in% goi_list$gene_symbol &
+                                               log2FoldChange > 0),
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                    color         = '#6E5C03', # ==hue, <ligthness than than "#A89008"
+                    segment.alpha = 0.8,
+                    segment.linetype = 3,
+                    hjust = 0,
+                    # positioning
+                    box.padding   = repulsion$box.padding,
+                    point.padding = repulsion$point.padding,
+                    nudge_x       = repulsion$nudge_x.up,
+                    nudge_y       = repulsion$nudge_y.up,
+                    force         = repulsion$force,
+                    force_pull    = repulsion$force_pull,
+                    max.overlaps  = Inf,
+                    xlim          = repulsion$xlims.up,    # NA repels from edges
+                    ylim          = repulsion$ylims.up) +
+    # mark special genes if downreg
+    geom_text_repel(data = deg %>% filter(gene_symbol %in% goi_list$gene_symbol &
+                                               log2FoldChange < 0),
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                     color         = '#0565AF', # ==hue, <ligthness than "#3A90FE"
+                     segment.alpha = 0.8,
+                     segment.linetype = 3,
+                     hjust = 0,
+                     # positioning
+                     box.padding   = repulsion$box.padding,
+                     point.padding = repulsion$point.padding,
+                     nudge_x       = repulsion$nudge_x.dn,
+                     nudge_y       = repulsion$nudge_y.dn,
+                     force         = repulsion$force,
+                     force_pull    = repulsion$force_pull,
+                     max.overlaps  = Inf,
+                     xlim          = repulsion$xlims.dn,             # NA repels from edges
+                     ylim          = repulsion$ylims.dn) +
+    # genotype label
+    geom_richtext(
+      data = annotations,
+      aes(x = xpos,y = ypos,
+          hjust = hjustvar, vjust = vjustvar,
+          label = annotateText,
+          fontface = 'bold',
+          size = 9),
+      fill = NA,
+      label.color = NA,
+      label.padding = grid::unit(rep(0, 4), "pt"),
+      label.margin = grid::unit(rep(0, 4), "pt")
+      ) +
+    # legend
+    guides(size = 'none') +
+    # apply markdown formatting, etc
+    theme(# markdown
+          axis.title.x = element_markdown(size = 14, face = 'bold'),
+          axis.title.y = element_markdown(size = 14, face = 'bold'),
+          axis.text = element_text(size = 10),
+          # grid and panel
+          panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+          panel.grid = element_blank(),
+          # legend
+          legend.margin = margin(b = -10),
+          legend.key.size = unit(1.2, 'cm'),
+          legend.text = element_text(size = 12, face = 'bold')
           )
-     )
-
-# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
-with(subset(df, padj<.05 & abs(log2FoldChange)>1),
-     points(log2FoldChange, -log10(padj),
-            pch=20, cex=.35, col="#e2aa3b"))
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
-     points(log2FoldChange, -log10(padj),
-            pch=20, cex=.9, col="#721f0f"))
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
-     points(log2FoldChange, -log10(padj),
-            pch=20, cex=.9, col="#18631a"))
-
-# Label points with the textxy function from the calibrate plot
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
-     textxy(log2FoldChange, -log10(padj),volv
-            labs=external_gene_name,
-            cex=0.9, font=2, col="#721f0f"))
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
-     textxy(log2FoldChange, -log10(padj),
-            labs=external_gene_name,
-            cex=0.9, font=2, col="#18631a"))
+    )
+}
 ```
 
+Apply this to the *daughterless* knockdown:
+```{r ggmaplot2_da_knockdown}
+# genes of interest dysregulated in this condition
+goi_kd <- DaKD_deg %>% dplyr::filter(
+  gene_symbol %in% genes_of_interest$gene_symbol &
+  reg!='non' &
+  abs(log2FoldChange)>2 &
+  padj<0.05
+  )
 
-### Second version
+repulsion <- list(box.padding = 0.8,
+                  point.padding = 0.5,
+                  nudge_x = 3,
+                  nudge_y = 2,
+                  force = 2,
+                  force_pull = 0.05,
+                  xlims.up = c(6, NA),
+                  ylims.up = c(6, NA),
+                  xlims.dn = c(6, NA),
+                  ylims.dn = c(6, NA))
 
-
-```{r}
-
-# Make a basic volcano plot
-with(subset(df, padj>=.05 | abs(log2FoldChange)<=1),
-     plot(log10(mean_tpm),
-          log2FoldChange,
-          pch=20, cex=.35, col=("#99999965"),
-          main=list("Sc", cex=3.1),
-          ylim=c(min(df$log2FoldChange, na.rm = TRUE),
-                 max(df$log2FoldChange, na.rm = TRUE))))
-
-# Add colored points: red if padj<0.05, orange of log2FC>1, green if both)
-with(subset(df, padj<.05 & abs(log2FoldChange)>1),
-     points(log10(mean_tpm),
-            log2FoldChange,
-            pch=20, cex=.35, col="#e2aa3b"))
-
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
-     points(log10(mean_tpm),
-            log2FoldChange,
-            pch=20, cex=.9, col="#721f0f"))
-
-with(filter(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
-     points(log10(mean_tpm),
-            log2FoldChange,
-            pch=20, cex=.9, col="#18631a"))
-
-abline(h=c(1,-1), lwd=c(2, 2))
-
-# Label points with the textxy function from the calibrate plot
-
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange<(-1)),
-     textxy(log10(mean_tpm),
-            log2FoldChange,
-            labs=external_gene_name,
-            cex=0.9, font=2, col="#721f0f"))
-plot()
-
-with(subset(df, external_gene_name %in% selected_genes & padj<.05 & log2FoldChange>1),
-     textxy(log10(mean_tpm),
-            log2FoldChange,
-            labs=external_gene_name,
-            cex=0.9, font=2, col="#18631a"))
-
+ggmaplot2 (deg = DaKD_deg,
+           fc_thresh = fc_thresh,
+           goi_list = goi_kd, 
+           md_label = '*esg > da^RNAi^*',
+           repulsion = repulsion)
 ```
 
-### Third version, with the `EnhancedVolcano` package
+```{r, echo=FALSE, include=FALSE}
+ggsave('MA_daKD.pdf', plot = last_plot(), device = 'pdf',
+       path = figdir, dpi = 300)
+ggsave('MA_daKD.svg', plot = last_plot(), device = 'svg',
+       path = figdir, dpi = 300)
+ggsave('MA_daKD.png', plot = last_plot(), device = png,
+       path = figdir, dpi = 300)
+```
 
-https://www.bioconductor.org/packages/devel/bioc/vignettes/EnhancedVolcano/inst/doc/EnhancedVolcano.html
+To the *daughterless* overexpression:
+```{r ggmaplot2_da_overexpression}
+# genes of interest dysregulated in this condition
+goi_da <- DaOE_deg %>% dplyr::filter(
+  gene_symbol %in% genes_of_interest$gene_symbol &
+  reg!='non' &
+  abs(log2FoldChange)>2 &
+  padj<0.05
+  )
 
-### Fourth version: just with `ggplot2` and `ggrepel`
+repulsion <- list(box.padding = 0.8,
+                  point.padding = 0.5,
+                  force = 2,
+                  force_pull = 0.05,
+                  nudge_x.up = 3,
+                  nudge_y.up = 2,
+                  xlims.up = c(5, NA),
+                  ylims.up = c(7, NA),
+                  nudge_x.dn = 3,
+                  nudge_y.dn = -2,
+                  xlims.dn = c(12, NA),
+                  ylims.dn = c(NA, -3))
 
-https://github.com/erikaduan/r_tips/blob/master/tutorials/dv-volcano_plots_with_ggplot/dv-volcano_plots_with_ggplot.md
-https://rpkgs.datanovia.com/ggpubr/reference/ggmaplot.html
+ggmaplot2(deg = DaOE_deg,
+          fc_thresh = fc_thresh,
+          goi_list = goi_da, 
+          md_label = '*esg > da*',
+          repulsion = repulsion)
+```
 
-this could also work for the MA plot
+```{r, echo=FALSE, include=FALSE}
+suppressMessages(ggsave('MA_daOE.pdf', plot = last_plot(), device = 'pdf',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_daOE.svg', plot = last_plot(), device = 'svg',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_daOE.png', plot = last_plot(), device = png,
+                        path = figdir, dpi = 300))
+```
 
+To the Daughterless homodimer overexpression:
+```{r ggmaplot2_da:da_overexpression}
+# genes of interest dysregulated in this condition
+goi_dada <- DaDaOE_deg %>% dplyr::filter(
+  gene_symbol %in% genes_of_interest$gene_symbol &
+  reg!='non' &
+  abs(log2FoldChange)>2 &
+  padj<0.05
+  )
 
-## MA plots
+repulsion <- list(box.padding = 0.8,
+                  point.padding = 0.5,
+                  force = 2,
+                  force_pull = 0.1,
+                  nudge_x.up = 3,
+                  nudge_y.up = 2,
+                  xlims.up = c(5, NA),
+                  ylims.up = c(7, NA),
+                  nudge_x.dn = 5,
+                  nudge_y.dn = -3,
+                  xlims.dn = c(10, NA),
+                  ylims.dn = c(NA, -1))
+
+ggmaplot2(deg = DaDaOE_deg,
+          fc_thresh = fc_thresh,
+          goi_list = goi_dada, 
+          md_label = '*esg > da:da*',
+          repulsion = repulsion)
+```
+
+```{r, echo=FALSE, include=FALSE}
+suppressMessages(ggsave('MA_dadaOE.pdf', plot = last_plot(), device = 'pdf',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_dadaOE.svg', plot = last_plot(), device = 'svg',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_dadaOE.png', plot = last_plot(), device = png,
+                        path = figdir, dpi = 300))
+```
+
+And, finally, to the *scute* overexpression:
+```{r ggmaplot2_sc_overexpression}
+# genes of interest dysregulated in this condition
+goi_sc <- ScOE_deg %>% dplyr::filter(
+  gene_symbol %in% genes_of_interest$gene_symbol &
+  reg!='non' &
+  abs(log2FoldChange)>2 &
+  padj<0.05
+  )
+
+repulsion <- list(box.padding = 0.8,
+                  point.padding = 0.5,
+                  force = 2,
+                  force_pull = 0.1,
+                  nudge_x.up = 3,
+                  nudge_y.up = 2,
+                  xlims.up = c(5, NA),
+                  ylims.up = c(7, NA),
+                  nudge_x.dn = 5,
+                  nudge_y.dn = -3,
+                  xlims.dn = c(NA, NA),
+                  ylims.dn = c(NA, -5))
+
+ggmaplot2(deg = ScOE_deg,
+          fc_thresh = fc_thresh,
+          goi_list = goi_sc, 
+          md_label = '*esg > scute*',
+          repulsion = repulsion)
+```
+
+```{r, echo=FALSE, include=FALSE}
+suppressMessages(ggsave('MA_ScOE.pdf', plot = last_plot(), device = 'pdf',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_ScOE.svg', plot = last_plot(), device = 'svg',
+                        path = figdir, dpi = 300))
+suppressMessages(ggsave('MA_ScOE.png', plot = last_plot(), device = png,
+                        path = figdir, dpi = 300))
+```

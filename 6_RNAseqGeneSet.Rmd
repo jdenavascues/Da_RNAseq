@@ -1,44 +1,92 @@
 ---
-title: "GSEA of RNAseq DGE data"
-output:
+title: "Analysis of DESeq2 results with gene set enrichment"
+description: "DEG analysis based on DESeq2 and GSEA"
+principal investigator: "Joaquín de Navascués"
+researcher: "Joaquín de Navascués"
+output: 
   html_document:
-    toc: yes
-    toc_depth: 2
+    toc: true
+    toc_float: true
+    code_folding: 'hide'
+    theme: readable
+    df_print: paged
 ---
+```{r set-publication-theme, echo=FALSE, cache=FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+```
 
-```{r}
-library(msigdbr)
-library(fgsea)
-library(ggplot2)
-library(dplyr)
+```{r setup, echo = FALSE, cache = FALSE}
+knitr::opts_chunk$set(dev = 'png', 
+                      fig.align = 'center', fig.height = 5, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+```
 
+**Libraries needed:**
+```{r load_libraries, warning=FALSE, echo=FALSE}
+if (!require("librarian")) install.packages("librarian")
+# data
+librarian::shelf(msigdbr, dplyr, fgsea)# purrr, stringr, santoku, DOSE, pathview, clusterProfiler, org.Hs.eg.db
+# graphics
+librarian::shelf(cetcolor, ggplot2)#, ggtheme, ggtext, ggrepel, ggpubr)
+# convenience
+librarian::shelf(here)
+setwd(here::here()) # to distinguish from dplyr::here()
+```
+
+**Path to definitive images (outside repo):**
+```{r define_dir2figs}
+figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
+                   paste0(tail(str_split(getwd(),'/')[[1]],1), '_figures')),
+                 collapse='/')
+dir.create(figdir, showWarnings = FALSE)
+```
+
+
+# Analysis of DESeq2 results with gene set enrichment
+
+
+## 1 Getting ready
+
+
+This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and gene symbol:
+```{r load_DEG_data}
+# experimental design and labels
+targets <- readRDS('output/targets.RDS')
+# DEG data
+DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
+DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
+DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
+ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
+head(
+  ScOE_deg %>% dplyr::select(gene_symbol, ensemblGeneID, baseMean, log2FoldChange, padj),
+  1
+)
+```
+
+
+## 2 Gene Set Enrichment Analysis
+
+Several sources:
+- http://flybase.org/static_pages/downloads/current/go/gene_association.fb.gz ('current' dec 2022? )
+- `library(org.Dm.eg.db)` (april 2023)
+- `library(msigdbr)` (oct 2022)
+
+
+This gets the GOs of Drosophila:
+```{r loading_Drosophila_ontologies}
 
 m_df = msigdbr(species = "Drosophila melanogaster", category = "C5")
 
-# I want unique rows for Drosophila, and because they have human homolog, Drosophila genes are duplicated. Remove Human data and then find unique
+# I want unique rows for Drosophila, and because they have human homologs, Drosophila genes are duplicated. Remove Human data and then find unique
 m_df$human_gene_symbol <- NULL
 m_df$sources <- NULL
-
 m_df <- unique(m_df)
 
-
 #Use the gene sets data frame for fgsea.
-
 m_list = m_df %>% split(x = .$gene_symbol, f = .$gs_name)
 
 ### Preparation of all sets to analyse ###
-
-setwd('/Users/aleix/Documents/bioinformatics/RNAseq/')
-working_dir <- getwd()
-
-# load all datasets obtained with DESEQ2
-
-WT_vs_2D <- read.table(file="output/differential_expression/2D_vs_WT.txt", header=TRUE, sep="\t")
-WT_vs_da <- read.table(file="output/differential_expression/da_vs_WT.txt", header=TRUE, sep="\t")
-WT_vs_sc <- read.table(file="output/differential_expression/sc_vs_WT.txt", header=TRUE, sep="\t")
-gene_list <- read.table(file="resources/gene_names.txt", header=TRUE, sep="\t")
-gene_list <- add_rownames(gene_list, "ensemblGeneID")
-
 
 gene_set <- WT_vs_2D
 gene_set <- merge(gene_set, gene_list, by=1)
