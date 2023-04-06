@@ -43,6 +43,7 @@ figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
 dir.create(figdir, showWarnings = FALSE)
 ```
 
+
 # Analysis of DESeq2 results with gene set enrichment
 
 
@@ -63,6 +64,7 @@ head(
   1
 )
 ```
+
 To get a differentially expressed gene set for Over-Representation Analysis:
 ```{r define_degset}
 degset_symbols <- function(deg, up, fc_thresh) {
@@ -74,23 +76,6 @@ degset_symbols <- function(deg, up, fc_thresh) {
  return(degset)
 }
 ```
-=======
-m_df = msigdbr(species = "Drosophila melanogaster", category = "C5")
-
-# I want unique rows for Drosophila, and because they have human homologs, Drosophila genes are duplicated. Remove Human data and then find unique
-m_df$human_gene_symbol <- NULL
-m_df$sources <- NULL
-m_df <- unique(m_df)
-
-#Use the gene sets data frame for fgsea.
-m_list = m_df %>% split(x = .$gene_symbol, f = .$gs_name)
-
-### Preparation of all sets to analyse ###
-
-gene_set <- WT_vs_2D
-gene_set <- merge(gene_set, gene_list, by=1)
-gene_set <- gene_set %>% filter(!is.na(padj))
->>>>>>> 2145723574d1a4d5e1eb190108847a9741494f30
 
 To get a ranked gene list for Gene Set Enrichment Analysis:
 ```{r define_degrank}
@@ -301,7 +286,7 @@ suppressWarnings(print(down))
 None of these plots are particularly informative, so I am going to move on to GSEA and custom gene sets.
 
 
-## 3 Gene Set Enrichment Analysis
+## 3 Gene Set Enrichment Analysis with Gene Ontology terms
 
 
 For *daughterless* knockdown:
@@ -497,4 +482,17 @@ gsep <- dotplot(scOE_GSEgo_log,
 
 suppressWarnings(print(gsep))
 ```
+
+
+## 4 Enrichment analysis of custom gene sets
+
+
+### 4.1 Cell-type specific transcriptomes (Dutta et al, Doupée et al)
+
+
+### 4.2 RNAi screen phenotypes (Zhang et al)
+
+
+### 4.3 Gene List Annotation for Drosophila (Mohr et al)
+
 
