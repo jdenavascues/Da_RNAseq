@@ -741,9 +741,15 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
   # create function to merge `empty` with GSE object data for each term ID
   gsemerge <- function(gse, empty, dvar) {
     return(
+      # full join selecting injecting dvar with
+      # embracing syntax {{}}
+      # bangbang !! operator with as.name function
+      # glue syntax "{}"
+      # dynamic assignment :=
       full_join(select(gse, all_of({{dvar}}), ID), empty, by='ID') %>%
-        mutate("{dvar}" := "{{dvar}}.x") %>%
-        select({{dvar}}, ID))
+        mutate( "{dvar}" := !!as.name(paste0(dvar,".x")) ) %>%
+        select( {{dvar}}, ID )
+      )
   }
   # purr::map to convert the gse_list from S4 objects to their @result slots 
   gseCP_list <- map(gseCP_list, \(x) x@result)
