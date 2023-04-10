@@ -30,7 +30,7 @@ librarian::shelf(
   # data manip.
   dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr,
   # plotting
-  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel,
+  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale,
 # convenience
   here)
 ```
@@ -731,8 +731,8 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
   # gseCP_list is a list of clusterProfiler GSEA objects
   # conditions is a list with the namees of the experimental conditions for those GSEA objects
   # dvar (data variable) for "name injection" with <data-masking> tidyverse functions
-  if ( !(dvar %in% c('NES', 'padjust')) ) {
-    stop("The argument `dvar` must be one of `NES` and `padjust`")
+  if ( !(dvar %in% c('NES', 'p.adjust')) ) {
+    stop("The argument `dvar` must be one of `NES` and `p.adjust`")
   }
   # create template with all term IDs (clusterProfiler trims those that do not give results)
   empty <- data.frame(rep(0, length(unique(gmx$term))),
@@ -769,46 +769,37 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
 }
 ```
 
-```{r}
+```{r create_dfs_for_NESheatmap}
 gse_list <- list(daKD_gse_dutta, daOE_gse_dutta,
                  dadaOE_gse_dutta, scOE_gse_dutta)
-conditions <- c('*esg > da^RNAi^*', '*esg > da*', '*esg > da:da', '*esg > scute*')
-
-NESdf <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'NES')
-
+conditions <- c('*esg > da^RNAi^*', '*esg > da*', '*esg > da:da*', '*esg > scute*')
+NES.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'NES')
+padj.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'p.adjust')
 ```
 
-
-
-```{r heatmaps}
-# extract data from all gse objects
-datacol <- 'NES'
-empty <- data.frame(rep(0, length(unique(dutta_gmx$term))),
-                    unique(dutta_gmx$term))
-names(empty) <- c(datacol, 'ID')
-# now fill it up with the available data from clusterProfiler
-gsemerge <- function(gse, empty, datacol) {
-  return(
-    full_join(select(gse, {{datacol}}, ID), empty, by='ID') %>%
-    mutate("{datacol}" := NES.x) %>%
-    select({{datacol}}, ID)
-  )
+```{r nes.heatmap}
+nes.heatmap <- function(NES.df, padj.df) {
 }
-# make a list of all the mergers
-gse_list <- lapply(
-  list(daKD_gse_dutta@result, daOE_gse_dutta@result,
-       dadaOE_gse_dutta@result, scOE_gse_dutta@result),
-  function(x) gsemerge(x, empty, datacol='NES')
-  )
-names(gse_list) <- c('daKD', 'daOE', 'dadaOE', 'scOE')
-NESdf <- gse_list %>%
-  imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
-  reduce(full_join, by='ID') %>%
-  pivot_longer(cols=-c('ID'), names_to = "condition", values_to = 'NES')
+ggplot(NES.df, aes(x=ID, y=condition)) +
+  geom_tile(aes(fill=NES), width=1) +
+  scale_fill_gradientn(colours=cet_pal(256, name='cbd1')) +
+  geom_point(data=padj.df,
+             aes(x=ID, y=condition, colour=-log10(p.adjust)),
+             size=5) +
+  scale_colour_gradientn(colours=cet_pal(256, name='cbd1')) +
+  coord_equal() +
+  theme_bw() +
+  ggtitle("Normalised Enrichment Scores") +
+  theme(axis.text.y = element_markdown(),
+        axis.title = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks = element_blank())
   
+
+
 ```
 
-
+ 
 
 
 ### 4.2 RNAi screen phenotypes (Zhang et al)
