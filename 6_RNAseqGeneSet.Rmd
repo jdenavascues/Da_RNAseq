@@ -26,13 +26,29 @@ knitr::opts_chunk$set(dev = 'png',
 ```{r load_libraries, warning=FALSE, echo=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
-librarian::shelf(dplyr, org.Dm.eg.db, fgsea, DOSE, pathview, clusterProfiler)# purrr, stringr, santoku
-# graphics
-librarian::shelf(cetcolor, ggplot2, enrichplot, ggh4x, ggtheme, ggtext)#, ggrepel, ggpubr)
+librarian::shelf(
+  # data manip.
+  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr,
+  # plotting
+  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel,
 # convenience
-librarian::shelf(here)
-setwd(here::here()) # to distinguish from dplyr::here()
-getwd()
+  here)
+```
+
+**Set working directory where the script is**
+```{r setwd}
+if (Sys.getenv("USER")=="JQ") {
+  setwd("/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq")
+} else if (Sys.getenv("RSTUDIO")==1) {
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+} else {
+  setwd(here::here())
+  d <- str_split(getwd(),'/')[[1]][length(str_split(getwd(),'/')[[1]])]
+  if (d != 'Da_RNAseq') { stop(
+    paste0("Could not set working directory automatically to where this",
+           " script resides.\nPlease do `setwd()` manually"))
+    }
+}
 ```
 
 **Path to definitive images (outside repo):**
@@ -67,7 +83,7 @@ head(
 
 To get a differentially expressed gene set for Over-Representation Analysis:
 ```{r define_degset}
-degset_symbols <- function(deg, up, fc_thresh) {
+make_degset <- function(deg, up, fc_thresh) {
   converter <- ifelse(up,1,-1)
   degset <- deg %>%
     filter(padj<0.05) %>%
@@ -79,17 +95,20 @@ degset_symbols <- function(deg, up, fc_thresh) {
 
 To get a ranked gene list for Gene Set Enrichment Analysis:
 ```{r define_degrank}
-degrank_symbols <- function(deg, mode='log2fc') {
+make_degrank <- function(deg, mode='log2fc', key='gene_symbol') {
+  if (!(key %in% c('gene_symbol', 'ensemblGeneID'))) {
+    stop("The `key` parameter needs to be one of 'gene_symbol', 'ensemblGeneID'")
+  }
   # mode: whether to use padj or log2FC
   if (mode=='log2fc') {
     deg_sorted <- deg %>% arrange(desc(log2FoldChange))
     degrank <- deg_sorted$log2FoldChange
-    names(degrank) <- deg_sorted$gene_symbol
+    names(degrank) <- deg_sorted[,key]
   } else if (mode=='padj') {
     deg$p.rank <- sign(deg$log2FoldChange) * -log10(deg$padj)
     deg_sorted <- deg %>% arrange(desc(p.rank))
     degrank <- deg_sorted$p.rank
-    names(degrank) <- deg_sorted$gene_symbol
+    names(degrank) <- deg_sorted[,key]
   } else {
     stop('the `mode` parameter can only be either `log2fc` or `padj`')
   }
@@ -105,7 +124,7 @@ For *daughterless* knockdown:
 ```{r ORA_da_knockdown}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-daKD_up <- degset_select_symbols(DaKD_deg, up=TRUE, fc_thresh=1.5)
+daKD_up <- make_degset(DaKD_deg, up=TRUE, fc_thresh=1.5)
 # ORA
 daKD_up_eGO <- enrichGO(gene         = daKD_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
@@ -114,7 +133,7 @@ daKD_up_eGO <- enrichGO(gene         = daKD_up$gene_symbol,
                         pvalueCutoff  = 0.01,
                         qvalueCutoff  = 0.05)
 # with down genes
-daKD_dn <- degset_select_symbols(DaKD_deg, up=FALSE, fc_thresh=1.5)
+daKD_dn <- make_degset(DaKD_deg, up=FALSE, fc_thresh=1.5)
 daKD_dn_eGO <- enrichGO(gene         = daKD_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
@@ -122,6 +141,7 @@ daKD_dn_eGO <- enrichGO(gene         = daKD_dn$gene_symbol,
                         pvalueCutoff  = 0.01,
                         qvalueCutoff  = 0.05)
 ```
+
 ```{r ORA_da_knockdown_plots}
 # plot
 up <- dotplot(daKD_up_eGO, showCategory=30, label_format=50) +
@@ -165,7 +185,7 @@ For *daughterless* overexpression:
 ```{r ORA_da_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-daOE_up <- degset_select_symbols(DaOE_deg, up=TRUE, fc_thresh=1.5)
+daOE_up <- make_degset(DaOE_deg, up=TRUE, fc_thresh=1.5)
 # ORA
 daOE_up_eGO <- enrichGO(gene         = daOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
@@ -174,7 +194,7 @@ daOE_up_eGO <- enrichGO(gene         = daOE_up$gene_symbol,
                         pvalueCutoff  = 0.01,
                         qvalueCutoff  = 0.05)
 # with down genes
-daOE_dn <- degset_select_symbols(DaOE_deg, up=FALSE, fc_thresh=1.5)
+daOE_dn <- make_degset(DaOE_deg, up=FALSE, fc_thresh=1.5)
 daOE_dn_eGO <- enrichGO(gene         = daOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
@@ -208,7 +228,7 @@ For *da:da* overexpression:
 ```{r ORA_dada_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-dadaOE_up <- degset_select_symbols(DaDaOE_deg, up=TRUE, fc_thresh=1.5)
+dadaOE_up <- make_degset(DaDaOE_deg, up=TRUE, fc_thresh=1.5)
 # ORA
 dadaOE_up_eGO <- enrichGO(gene         = dadaOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
@@ -217,7 +237,7 @@ dadaOE_up_eGO <- enrichGO(gene         = dadaOE_up$gene_symbol,
                         pvalueCutoff  = 0.01,
                         qvalueCutoff  = 0.05)
 # with down genes
-dadaOE_dn <- degset_select_symbols(DaDaOE_deg, up=FALSE, fc_thresh=1.5)
+dadaOE_dn <- make_degset(DaDaOE_deg, up=FALSE, fc_thresh=1.5)
 dadaOE_dn_eGO <- enrichGO(gene         = dadaOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
@@ -244,7 +264,7 @@ For *scute* overexpression:
 ```{r ORA_sc_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-scOE_up <- degset_select_symbols(ScOE_deg, up=TRUE, fc_thresh=1.5)
+scOE_up <- make_degset(ScOE_deg, up=TRUE, fc_thresh=1.5)
 # ORA
 scOE_up_eGO <- enrichGO(gene         = scOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
@@ -253,7 +273,7 @@ scOE_up_eGO <- enrichGO(gene         = scOE_up$gene_symbol,
                         pvalueCutoff  = 0.01,
                         qvalueCutoff  = 0.05)
 # with down genes
-scOE_dn <- degset_select_symbols(ScOE_deg, up=FALSE, fc_thresh=1.5)
+scOE_dn <- make_degset(ScOE_deg, up=FALSE, fc_thresh=1.5)
 scOE_dn_eGO <- enrichGO(gene         = scOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
@@ -293,7 +313,7 @@ For *daughterless* knockdown:
 ```{r GSEA_da_knockdown}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-daKD_rank <- degrank_symbols(DaKD_deg, mode='log2fc')
+daKD_rank <- make_degrank(DaKD_deg, mode='log2fc')
 # GSEA
 daKD_GSEgo <- gseGO(geneList=daKD_rank,
                     keyType = 'SYMBOL',
@@ -340,7 +360,7 @@ For *daughterless* overexpression:
 ```{r GSEA_da_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-daOE_rank <- degrank_symbols(DaOE_deg, mode='log2fc')
+daOE_rank <- make_degrank(DaOE_deg, mode='log2fc')
 # GSEA
 daOE_GSEgo <- gseGO(geneList=daOE_rank,
                     keyType = 'SYMBOL',
@@ -387,7 +407,7 @@ For *da:da* overexpression:
 ```{r GSEA_dada_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-dadaOE_rank <- degrank_symbols(DaDaOE_deg, mode='log2fc')
+dadaOE_rank <- make_degrank(DaDaOE_deg, mode='log2fc')
 # GSEA
 dadaOE_GSEgo <- gseGO(geneList=dadaOE_rank,
                     keyType = 'SYMBOL',
@@ -438,7 +458,7 @@ For *scute* overexpression:
 ```{r GSEA_dada_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
-scOE_rank <- degrank_symbols(ScOE_deg, mode='log2fc')
+scOE_rank <- make_degrank(ScOE_deg, mode='log2fc')
 # GSEA
 scOE_GSEgo <- gseGO(geneList=scOE_rank,
                     keyType = 'SYMBOL',
@@ -483,11 +503,306 @@ gsep <- dotplot(scOE_GSEgo_log,
 suppressWarnings(print(gsep))
 ```
 
+I think that the signals are not strong enough to give anything meaningful. It may be better to use more focused gene sets ----|>
+
 
 ## 4 Enrichment analysis of custom gene sets
 
 
+### 4.0 Getting ready
+
+
+Define a function to import the gene sets in the gmx files
+```{r reinventing_wheel_gmx}
+import_from_gmx <- function(gmxfile) {
+  # read a GMX file and turn it into a df input appropriate for `clusterProfiler`
+  df <- read.csv(gmxfile, header=TRUE, sep='\t')
+  # remove 'na's in 1st row
+  df <- df[ !df[1]=='na', ]
+  # pivot
+  df <- df %>% pivot_longer(cols = everything(),
+                            names_to = 'term',
+                            values_to = 'gene')
+  # remove rows with no genes
+  df <- df %>% subset(gene != '')
+  df <- df %>% mutate(gene = str_replace(gene, "FBGN", "FBgn"),
+                      term = str_replace(term, ".only", "-only"))
+  df <- df %>% mutate(term = str_replace(term, "\\.", " "))
+  return(df)
+}
+```
+
+
+
 ### 4.1 Cell-type specific transcriptomes (Dutta et al, Doupée et al)
+
+
+```{r dutta}
+dutta_gmx <- import_from_gmx(paste0(getwd(),'/resources/Dutta.gmx'))
+daKD_gse_dutta <- GSEA(geneList=make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID'),
+                       exponent = 1,
+                       minGSSize = 1,
+                       maxGSSize = 1000,
+                       eps = 0,
+                       pvalueCutoff = 0.05,
+                       pAdjustMethod = "BH",
+                       TERM2GENE = dutta_gmx,
+                       TERM2NAME = NA,
+                       verbose = TRUE,
+                       seed = FALSE,
+                       by = "fgsea")
+```
+
+```{r}
+daKD_gse_dutta_log <- daKD_gse_dutta
+daKD_gse_dutta_log@result$p.adjust <- -log10(daKD_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
+d <- ifelse(sort(daKD_gse_dutta_log$NES) > 0,
+            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
+# plot
+gsep <- dotplot(daKD_gse_dutta_log,
+                x='NES', 
+                showCategory=number_of_terms,
+                label_format=60
+                ) +
+  ggtitle("Enriched/depleted GO terms in *esg > da^RNAi^*") +
+  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                        high = cet_pal(3, name='d2')[3]) +
+  labs(color = '-log~10~(*p*)') +
+  theme(plot.title = element_markdown(),
+        plot.title.position = 'panel',
+        legend.title = element_markdown(),
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size=9, colour=d))
+print(gsep)
+```
+```{r}
+daOE_gse_dutta <- GSEA(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID'),
+                       exponent = 1,
+                       minGSSize = 1,
+                       maxGSSize = 1000,
+                       eps = 0,
+                       pvalueCutoff = 0.05,
+                       pAdjustMethod = "BH",
+                       TERM2GENE = dutta_gmx,
+                       TERM2NAME = NA,
+                       verbose = TRUE,
+                       seed = FALSE,
+                       by = "fgsea")
+daOE_gse_dutta_log <- daOE_gse_dutta
+daOE_gse_dutta_log@result$p.adjust <- -log10(daOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
+d <- ifelse(sort(daOE_gse_dutta_log$NES) > 0,
+            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
+# plot
+gsep <- dotplot(daOE_gse_dutta_log,
+                x='NES', 
+                showCategory=number_of_terms,
+                label_format=60
+                ) +
+  ggtitle("Enriched/depleted GO terms in *esg > da*") +
+  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                        high = cet_pal(3, name='d2')[3]) +
+  labs(color = '-log~10~(*p*)') +
+  theme(plot.title = element_markdown(),
+        plot.title.position = 'panel',
+        legend.title = element_markdown(),
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size=9, colour=d))
+print(gsep)
+```
+
+```{r}
+dadaOE_gse_dutta <- GSEA(geneList=make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID'),
+                       exponent = 1,
+                       minGSSize = 1,
+                       maxGSSize = 1000,
+                       eps = 0,
+                       pvalueCutoff = 0.05,
+                       pAdjustMethod = "BH",
+                       TERM2GENE = dutta_gmx,
+                       TERM2NAME = NA,
+                       verbose = TRUE,
+                       seed = FALSE,
+                       by = "fgsea")
+dadaOE_gse_dutta_log <- dadaOE_gse_dutta
+dadaOE_gse_dutta_log@result$p.adjust <- -log10(dadaOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
+d <- ifelse(sort(dadaOE_gse_dutta_log$NES) > 0,
+            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
+# plot
+gsep <- dotplot(dadaOE_gse_dutta_log,
+                x='NES', 
+                showCategory=number_of_terms,
+                label_format=60
+                ) +
+  ggtitle("Enriched/depleted GO terms in *esg > da:da*") +
+  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                        high = cet_pal(3, name='d2')[3]) +
+  labs(color = '-log~10~(*p*)') +
+  theme(plot.title = element_markdown(),
+        plot.title.position = 'panel',
+        legend.title = element_markdown(),
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size=9, colour=d))
+print(gsep)
+```
+
+```{r}
+scOE_gse_dutta <- GSEA(geneList=make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID'),
+                       exponent = 1,
+                       minGSSize = 1,
+                       maxGSSize = 1000,
+                       eps = 0,
+                       pvalueCutoff = 0.05,
+                       pAdjustMethod = "BH",
+                       TERM2GENE = dutta_gmx,
+                       TERM2NAME = NA,
+                       verbose = TRUE,
+                       seed = FALSE,
+                       by = "fgsea")
+scOE_gse_dutta_log <- scOE_gse_dutta
+scOE_gse_dutta_log@result$p.adjust <- -log10(scOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
+d <- ifelse(sort(scOE_gse_dutta_log$NES) > 0,
+            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
+# plot
+gsep <- dotplot(scOE_gse_dutta_log,
+                x='NES', 
+                showCategory=number_of_terms,
+                label_format=60
+                ) +
+  ggtitle("Enriched/depleted GO terms in *esg > scute*") +
+  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                        high = cet_pal(3, name='d2')[3]) +
+  labs(color = '-log~10~(*p*)') +
+  theme(plot.title = element_markdown(),
+        plot.title.position = 'panel',
+        legend.title = element_markdown(),
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size=9, colour=d))
+print(gsep)
+```
+
+This is very strange - everything comes up with the opposite of what was expected according to the phenotypes. May I have made some silly mistake? For instance:
+
+1. Inverting the order of the genes when doing the ranking
+2. Inverting the order of the conditions when doing DESeq2
+3. Making a mistake when saving the DESeq2 results
+
+Possibility #1 looks unlikely, as the rank looks fine:
+```{r plot_rank}
+scuter <- data.frame(l2fc=make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')) %>%
+  mutate(index=row_number(), id=row.names(.))
+labels <- ScOE_deg %>%
+  select(ensemblGeneID, log2FoldChange, gene_symbol) %>%
+  slice_max(log2FoldChange,n=5) %>%
+  mutate(index=row_number())
+p <- ggplot(scuter, aes(x=index, y=l2fc))
+p + geom_point(alpha=0.2) +
+    geom_text_repel(labels, mapping=aes(label = gene_symbol, x=index, y=log2FoldChange),
+                    point.padding=0.5, box.padding=1, nudge_x = 1500)
+```
+
+For #2 and #3, I will get back to that later. Meanwhile, I need to make heatmaps and GSEA plots from the results. I will use `genekitr` for this.
+
+#### Plot results for submission
+
+```{r genekitr_customisation}
+# the gsea objects generated from clusterProfiler are:
+# daKD_gse_dutta, daOE_gse_dutta, dadaOE_gse_dutta, scOE_gse_dutta
+daKD_gse_dutta@organism <- 'dm'
+daOE_gse_dutta@organism <- 'dm'
+dadaOE_gse_dutta@organism <- 'dm'
+scOE_gse_dutta@organism <- 'dm'
+daKD_gse_dutta_gtr   <- importCP(daKD_gse_dutta, type = 'gsea')
+daOE_gse_dutta_gtr   <- importCP(daOE_gse_dutta, type = 'gsea')
+dadaOE_gse_dutta_gtr <- importCP(dadaOE_gse_dutta, type = 'gsea')
+scOE_gse_dutta_gtr   <- importCP(scOE_gse_dutta, type = 'gsea')
+
+plotGSEA(scOE_gse_dutta_gtr,
+         plot_type = "classic",
+         show_pathway = scOE_gse_dutta_gtr$gsea_df$ID[1:2],
+         #show_gene = scOE_gse_dutta_gtr$genelist[seq(1, by=10, length=2),'ID']
+         show_gene = c('da', 'sc', 'emc', 'pros', 'poxn', 'Myo31DF', 'ck', 'nub', 'pdm2', 'esg', 'Dl'))
+```
+
+Prepare data to plot heatmaps with NES and padj
+```{r gseCP_summarise}
+# extract data from all gse objects into a single df
+gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
+  # gmx is a df containing the data of a GMX file
+  # gseCP_list is a list of clusterProfiler GSEA objects
+  # conditions is a list with the namees of the experimental conditions for those GSEA objects
+  # dvar (data variable) for "name injection" with <data-masking> tidyverse functions
+  if ( !(dvar %in% c('NES', 'padjust')) ) {
+    stop("The argument `dvar` must be one of `NES` and `padjust`")
+  }
+  # create template with all term IDs (clusterProfiler trims those that do not give results)
+  empty <- data.frame(rep(0, length(unique(gmx$term))),
+                    unique(gmx$term))
+  names(empty) <- c(dvar, 'ID')
+  # create function to merge `empty` with GSE object data for each term ID
+  gsemerge <- function(gse, empty, dvar) {
+    return(
+      full_join(select(gse, all_of({{dvar}}), ID), empty, by='ID') %>%
+        mutate("{dvar}" := "{{dvar}}.x") %>%
+        select({{dvar}}, ID))
+  }
+  # purr::map to convert the gse_list from S4 objects to their @result slots 
+  gseCP_list <- map(gseCP_list, \(x) x@result)
+  # apply gsemerge
+  gseCP_list <- lapply( gseCP_list, \(x) gsemerge(x, empty, dvar) )
+  # name them to associate conditions with the data
+  names(gseCP_list) <- conditions
+  # 
+  df <- gseCP_list %>%
+    # change the colnames to condition names
+    imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
+    # merge them all together
+    reduce(full_join, by='ID') %>%
+    # tidy up all dvar values in one col
+    pivot_longer(cols=-c('ID'), names_to = "condition", values_to = dvar)
+  return(df)
+}
+```
+
+```{r}
+gse_list <- list(daKD_gse_dutta, daOE_gse_dutta,
+                 dadaOE_gse_dutta, scOE_gse_dutta)
+conditions <- c('*esg > da^RNAi^*', '*esg > da*', '*esg > da:da', '*esg > scute*')
+
+NESdf <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'NES')
+
+```
+
+
+
+```{r heatmaps}
+# extract data from all gse objects
+datacol <- 'NES'
+empty <- data.frame(rep(0, length(unique(dutta_gmx$term))),
+                    unique(dutta_gmx$term))
+names(empty) <- c(datacol, 'ID')
+# now fill it up with the available data from clusterProfiler
+gsemerge <- function(gse, empty, datacol) {
+  return(
+    full_join(select(gse, {{datacol}}, ID), empty, by='ID') %>%
+    mutate("{datacol}" := NES.x) %>%
+    select({{datacol}}, ID)
+  )
+}
+# make a list of all the mergers
+gse_list <- lapply(
+  list(daKD_gse_dutta@result, daOE_gse_dutta@result,
+       dadaOE_gse_dutta@result, scOE_gse_dutta@result),
+  function(x) gsemerge(x, empty, datacol='NES')
+  )
+names(gse_list) <- c('daKD', 'daOE', 'dadaOE', 'scOE')
+NESdf <- gse_list %>%
+  imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
+  reduce(full_join, by='ID') %>%
+  pivot_longer(cols=-c('ID'), names_to = "condition", values_to = 'NES')
+  
+```
+
+
 
 
 ### 4.2 RNAi screen phenotypes (Zhang et al)
