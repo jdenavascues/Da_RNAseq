@@ -40,7 +40,7 @@ librarian::shelf(
 if (Sys.getenv("USER")=="JQ") {
   setwd("/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq")
 } else if (Sys.getenv("RSTUDIO")==1) {
-  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+  setwd( dirname(rstudioapi::getSourceEditorContext(id = NULL)$path) ) # gets what is in the editor
 } else {
   setwd(here::here())
   d <- str_split(getwd(),'/')[[1]][length(str_split(getwd(),'/')[[1]])]
@@ -49,6 +49,7 @@ if (Sys.getenv("USER")=="JQ") {
            " script resides.\nPlease do `setwd()` manually"))
     }
 }
+getwd()
 ```
 
 **Path to definitive images (outside repo):**
@@ -762,7 +763,7 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
     # change the colnames to condition names
     imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
     # merge them all together
-    reduce(full_join, by='ID') %>%
+    purrr::reduce(full_join, by='ID') %>%
     # tidy up all dvar values in one col
     pivot_longer(cols=-c('ID'), names_to = "condition", values_to = dvar)
   return(df)
