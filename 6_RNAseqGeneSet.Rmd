@@ -529,6 +529,7 @@ import_from_gmx <- function(gmxfile) {
   df <- df %>% mutate(gene = str_replace(gene, "FBGN", "FBgn"),
                       term = str_replace(term, ".only", "-only"))
   df <- df %>% mutate(term = str_replace(term, "\\.", " "))
+  df <- df %>% mutate(term = str_replace(term, " genes", ""))
   return(df)
 }
 ```
@@ -701,7 +702,22 @@ p + geom_point(alpha=0.2) +
                     point.padding=0.5, box.padding=1, nudge_x = 1500)
 ```
 
-For #2 and #3, I will get back to that later. Meanwhile, I need to make heatmaps and GSEA plots from the results. I will use `genekitr` for this.
+Possibility #2 seems more likely, as the manipulated genes (_da_ and _sc_) seem to do the opposite of what their genotype would predict:
+```{r}
+cat(
+paste0('esg>da[RNAi] leads to a log2fc of _da_ of:\t',
+        as.character(subset(DaKD_deg, gene_symbol=='da')$log2FoldChange), '\n'),
+paste0('esg>da leads to a log2fc of _da_ of:\t',
+        as.character(subset(DaOE_deg, gene_symbol=='da')$log2FoldChange), '\n'),
+paste0('esg>da:da leads to a log2fc of _da_ of:\t',
+        as.character(subset(DaDaOE_deg, gene_symbol=='da')$log2FoldChange), '\n'),
+paste0('esg>sc leads to a log2fc of _scute_ of:\t',
+        as.character(subset(ScOE_deg, gene_symbol=='sc')$log2FoldChange), '\n')
+)
+```
+
+This is only consistent with inverting the reference condition in `DESeq2`. I will get back to that later.
+Meanwhile, I need to make heatmaps and GSEA plots from the results. I will use `genekitr` for this.
 
 #### GSEA plots for submission
 
@@ -725,14 +741,15 @@ plotGSEA(scOE_gse_dutta_gtr,
 ```
 
 
-Prepare data to plot heatmaps with NES and padj
+Prepare data to plot heatmaps with NES and padj with the function below, `gseCP_summarise`. This is likely more complicated than it needs to be, as (now) all the GSEA objects have the same number of gene sets, but that is because I am running `GSEA` with `pvalueCutoff = 1`. If you run it with `pvalueCutoff<1`, non-significant gene sets do not even show up in the `@result` slot. In case this is happening, `gseCP_summarise` does a full join.
+You run this separately for the NES or adjusted _p_ values for "historical" reasons (I didn't think it through, and had to restore to new syntax that now I don't want to throw away :).
 ```{r gseCP_summarise}
-# extract data from all gse objects into a single df
-gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
-  # gmx is a df containing the data of a GMX file
-  # gseCP_list is a list of clusterProfiler GSEA objects
-  # conditions is a list with the namees of the experimental conditions for those GSEA objects
-  # dvar (data variable) for "name injection" with <data-masking> tidyverse functions
+## extract data from a list of gse objects from clusterProfiler into a single df
+## gmx is a df containing the data of a GMX file
+## gseCP_list is a list of clusterProfiler GSEA objects
+## conditions is a list with the names of the experimental conditions for those GSEA objects
+## dvar (data variable) for "name injection" with <data-masking> tidyverse functions
+gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar) {
   if ( !(dvar %in% c('NES', 'p.adjust')) ) {
     stop("The argument `dvar` must be one of `NES` and `p.adjust`")
   }
@@ -759,7 +776,6 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
   gseCP_list <- lapply( gseCP_list, \(x) gsemerge(x, empty, dvar) )
   # name them to associate conditions with the data
   names(gseCP_list) <- conditions
-  # 
   df <- gseCP_list %>%
     # change the colnames to condition names
     imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
@@ -767,55 +783,250 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, dvar) {
     purrr::reduce(full_join, by='ID') %>%
     # tidy up all dvar values in one col
     pivot_longer(cols=-c('ID'), names_to = "condition", values_to = dvar)
+  df$condition <- factor(df$condition, levels = conditions)
+  df$ID <- factor(df$ID, levels = sets.as.factors)
   return(df)
 }
 ```
 
+Now we can apply `gseCP_summarise` to the GSEA results from all conditions:
 ```{r create_dfs_for_NESheatmap}
-gse_list <- list(daKD_gse_dutta, daOE_gse_dutta,
-                 dadaOE_gse_dutta, scOE_gse_dutta)
-conditions <- c('*esg > da^RNAi^*', '*esg > da*', '*esg > da:da*', '*esg > scute*')
-NES.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'NES')
-padj.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, 'p.adjust')
+gse_list <- list(scOE_gse_dutta, dadaOE_gse_dutta, daOE_gse_dutta, daKD_gse_dutta)
+conditions <- c('*scute*', '*da:da*', '*da*', '*da^RNAi^*')
+# gse_list and conditions must have the same order
+sets.as.factors <- c("ISC-only", "Progenitor", "EB-only", "EE-only",
+                     "Absorptive", "EC-only", "Differentiation")
+NES.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'NES')
+padj.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
 ```
 
-```{r nes.heatmap}
-nes.heatmap <- function(NES.df, padj.df) {
+And we can use this to plot the results in the way we want:
+```{r layer.heatmap}
+layer.heatmap <- function(NES.df, padj.df, subt) {
+  p <- ggplot(NES.df, aes(x=ID, y=condition)) +
+    # plot statistic (NES)
+    geom_tile(aes(fill=NES), width=1) +
+    scale_fill_gradient2(low = cet_pal(3, name='cbd1')[1],
+                         mid = cet_pal(3, name='cbd1')[2],
+                         high = cet_pal(3, name='cbd1')[3],
+                         midpoint = 0) +
+    # plot p-value
+    # statistically significant with colour and shape `*`
+    geom_point(data=subset(padj.df, p.adjust<0.05),
+               aes(x=ID, y=condition, colour=-log10(p.adjust)),
+               size=4, shape=8, stroke=1, alpha=1) +
+               #size=5, shape=23, alpha=1) +
+    # non-significant in dark gray and shape `x`
+    geom_point(data=subset(padj.df, p.adjust>0.05),
+               aes(x=ID, y=condition),
+               size=3, shape=4, stroke=2, alpha=1, colour='gray50') +
+    scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                          high = cet_pal(3, name='d2')[3]) +
+    coord_equal() +
+    theme_bw() +
+    ggtitle("Normalised Enrichment Scores",
+            subtitle = subt) +
+    scale_x_discrete(labels=toupper(levels(NES.df$ID)),
+                     position = "top",
+                     expand = expansion(mult = 0, add = 0)) +
+    scale_y_discrete(expand = expansion(mult = 0, add = 0)) +
+    labs(fill = 'NES',
+         colour = '-log~10~(_p.adj_)<br><span style = "font-size:8pt;">_p.adj_<0.05</span>') +
+    theme(axis.text.x = element_markdown(angle=25, hjust=0,
+                                         face='bold', size=10.5),
+          axis.text.y = element_markdown(hjust=1, face='bold', size=12),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          legend.title = element_markdown(hjust=0.5, vjust=0.75),
+          legend.direction = 'horizontal',
+          legend.position = 'bottom',
+          panel.grid = element_blank(),
+          panel.border = element_rect(linewidth = 1))
+  return(p)
 }
-ggplot(NES.df, aes(x=ID, y=condition)) +
-  geom_tile(aes(fill=NES), width=1) +
-  scale_fill_gradientn(colours=cet_pal(256, name='cbd1')) +
-  #new_scale_fill() +
-  geom_point(data=padj.df,
-             aes(x=ID, y=condition, colour=-log10(p.adjust)),
-             size=5, shape=4, stroke=3, alpha=1) +
-             #size=5, shape=23, alpha=1) +
-  scale_colour_gradient2(low = 'black',
-                         mid = 'white',
-                         high = cet_pal(3, name='d2')[3],
-                         midpoint = -log(0.05)) +
-  coord_equal() +
-  theme_bw() +
-  ggtitle("Normalised Enrichment Scores") +
-  scale_x_discrete(position = "top", expand = expansion(mult = 0, add = 0)) +
-  scale_y_discrete(expand = expansion(mult = 0, add = 0)) +
-  theme(axis.text.x = element_markdown(angle=25, hjust=0,
-                                       face='bold', size=10.5, ),
-        axis.text.y = element_markdown(hjust=1, face='bold', size=12),
-        axis.title = element_blank(),
-        axis.ticks = element_blank(),
-        panel.grid = element_blank(),
-        panel.border = element_rect(linewidth = 1))
 ```
 
- OK, so this is a problem, I'd like to have NES values even if they are not statistically significant.
 ```{r}
-
-
+subt <- "for cell-type specific gene sets (Dutta et al., 2015)"
+p <- layer.heatmap(NES.df, padj.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
 ```
-### 4.2 RNAi screen phenotypes (Zhang et al)
 
 
-### 4.3 Gene List Annotation for Drosophila (Mohr et al)
+### 4.2 RNAi screen phenotypes (Zeng et al., 2015)
 
 
+To simplify later on the GSEA calls:
+```{r zeng}
+# common gene set
+zeng_gmx <- import_from_gmx(paste0(getwd(),'/resources/Zeng.gmx'))
+zeng_gmx$term <- str_replace_all(zeng_gmx$term, c(
+  "Excess of.ISC.or.EB" = "Excess ISC/EB",
+  "ISC to.EC"           = "ISC to EC",
+  "ISC to.EE"           = "ISC to EE",
+  "Overproliferation"   = "Over-proliferation" ) )
+# common parameters
+GSEAparams <- list(exponent = 1, minGSSize = 1, maxGSSize = 1000, eps = 0, pvalueCutoff = 1,
+                   pAdjustMethod = "BH", TERM2GENE = zeng_gmx, TERM2NAME = NA, verbose = TRUE,
+                   seed = FALSE, by = "fgsea")
+```
+
+Now we can simply define the rank file and apply GSEA for each condition:
+```{r, message=FALSE}
+# da knockdown
+zrank <- make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID')
+daKD_gse_zeng <- do.call(
+  GSEA, c(list(geneList=zrank), GSEAparams)
+  )
+# da overexpression
+zrank <- make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID')
+daOE_gse_zeng <- do.call(
+  GSEA, c(list(geneList=zrank), GSEAparams)
+  )
+# da:da overexpression
+zrank <- make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID')
+dadaOE_gse_zeng <- do.call(
+  GSEA, c(list(geneList=zrank), GSEAparams)
+  )
+# scute overexpression
+zrank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
+scOE_gse_zeng <- do.call(
+  GSEA, c(list(geneList=zrank), GSEAparams)
+  )
+```
+
+The dot plots have not been that interesting and are very bulky, so I move straight to the heatmaps.
+
+First to produce the dataframes for `ggplot2`:
+```{r create_dfs_for_NESheatmap}
+gse_list <- list(scOE_gse_zeng, dadaOE_gse_zeng, daOE_gse_zeng, daKD_gse_zeng)
+# `conditions` were defined further above
+sets.as.factors <- c("Excess ISC/EB", "Over-proliferation", "ISC to EE", "ISC to EC", "Large nucleus", "ISC death")
+NES.df <- gseCP_summarise(zeng_gmx, gse_list, conditions, sets.as.factors, 'NES')
+padj.df <- gseCP_summarise(zeng_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+
+subt <- "for RNAi-induced phenotypic class gene sets (Zeng et al., 2015)"
+p <- layer.heatmap(NES.df, padj.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+```
+
+#### GSEA plots
+
+Prepare the data:
+```{r genekitr_custom_use}
+daKD_gse_zeng@organism <- 'dm'
+daOE_gse_zeng@organism <- 'dm'
+dadaOE_gse_zeng@organism <- 'dm'
+scOE_gse_zeng@organism <- 'dm'
+daKD_gse_zeng_gtr   <- importCP(daKD_gse_zeng, type = 'gsea')
+daOE_gse_zeng_gtr   <- importCP(daOE_gse_zeng, type = 'gsea')
+dadaOE_gse_zeng_gtr <- importCP(dadaOE_gse_zeng, type = 'gsea')
+scOE_gse_zeng_gtr   <- importCP(scOE_gse_zeng, type = 'gsea')
+```
+
+Tentative plot:
+```{r}
+plotGSEA(scOE_gse_zeng_gtr,
+         plot_type = "classic",
+         show_pathway = scOE_gse_zeng_gtr$gsea_df$ID[3],
+         show_gene = c() )
+```
+
+
+### 4.3 Gene List Annotation for Drosophila (Hu et al., 2015)
+
+
+GSEA calls:
+```{r hu_GLAD}
+# common gene set
+glad_gmx <- import_from_gmx(paste0(getwd(),'/resources/GLAD.gmx'))
+# no correction of the names of the gene sets for the moment
+# pattern <- setNames(c('',' ',':',''),
+#                     c(regex("pathway$", dotall = TRUE),'.','_','signalling| vs2')
+#                     )
+# glad_gmx$term <- str_replace_all(glad_gmx$term, pattern)
+# common parameters
+GSEAparams <- list(exponent = 1, minGSSize = 1, maxGSSize = 1000, eps = 0, pvalueCutoff = 1,
+                   pAdjustMethod = "BH", TERM2GENE = glad_gmx, TERM2NAME = NA, verbose = TRUE,
+                   seed = FALSE, by = "fgsea")
+```
+
+Now we can simply define the rank file and apply GSEA for each condition:
+```{r, message=FALSE}
+# da knockdown
+rank <- make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID')
+daKD_gse_glad <- do.call(
+  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  )
+```
+```{r, message=FALSE}
+# da overexpression
+rank <- make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID')
+daOE_gse_glad <- do.call(
+  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  )
+```
+```{r, message=FALSE}
+# da:da overexpression
+rank <- make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID')
+dadaOE_gse_glad <- do.call(
+  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  )
+```
+```{r, message=FALSE}
+# scute overexpression
+
+# MUTED AS IT TAKES >20 MIN TO RUN
+
+# rank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
+# scOE_gse_glad <- do.call(
+#   GSEA, c(list(geneList=rank, nPermSimple = 1000000), GSEAparams)
+#   )
+saveRDS(scOE_gse_glad, 'output/scOE_gse_glad.RDS')
+```
+```{r}
+scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
+```
+
+First to produce the dataframes for `ggplot2`:
+```{r create_dfs_for_NESheatmap, fig.width=16}
+gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
+# `conditions` were defined further above
+sets.as.factors <- unique(glad_gmx$term)
+NES.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'NES')
+padj.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+
+subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
+p <- layer.heatmap(NES.df, padj.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+```
+
+#### GSEA plots
+
+Prepare the data:
+```{r genekitr_custom_use}
+daKD_gse_glad@organism <- 'dm'
+daOE_gse_glad@organism <- 'dm'
+dadaOE_gse_glad@organism <- 'dm'
+scOE_gse_glad@organism <- 'dm'
+daKD_gse_glad_gtr   <- importCP(daKD_gse_glad, type = 'gsea')
+daOE_gse_glad_gtr   <- importCP(daOE_gse_glad, type = 'gsea')
+dadaOE_gse_glad_gtr <- importCP(dadaOE_gse_glad, type = 'gsea')
+scOE_gse_glad_gtr   <- importCP(scOE_gse_glad, type = 'gsea')
+```
+
+Tentative plot:
+```{r}
+plotGSEA(scOE_gse_glad_gtr,
+         plot_type = "classic",
+         show_pathway = scOE_gse_glad_gtr$gsea_df$ID[c(1,6)],
+         show_gene = c() )
+```
+
+
+# TO-DO NEXT:
+
+- Tidy up the names of the GLAD gene sets
+- Split the sub-types to make separate `layer.heatmaps`
+- Maybe modify `gseCP_summary` to 'trim' the gene sets, maybe passing another column with the subtypes
+- Produce all the heatmaps, and work out how to specify a fixed size ratio between the tile and the text (cowplot, ggarrange...)
