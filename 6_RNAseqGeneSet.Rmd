@@ -131,7 +131,7 @@ daKD_up_eGO <- enrichGO(gene         = daKD_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 # with down genes
 daKD_dn <- make_degset(DaKD_deg, up=FALSE, fc_thresh=1.5)
@@ -139,7 +139,7 @@ daKD_dn_eGO <- enrichGO(gene         = daKD_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 ```
 
@@ -192,7 +192,7 @@ daOE_up_eGO <- enrichGO(gene         = daOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 # with down genes
 daOE_dn <- make_degset(DaOE_deg, up=FALSE, fc_thresh=1.5)
@@ -200,7 +200,7 @@ daOE_dn_eGO <- enrichGO(gene         = daOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 ```
 ```{r ORA_da_overexpression_plots}
@@ -235,7 +235,7 @@ dadaOE_up_eGO <- enrichGO(gene         = dadaOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 # with down genes
 dadaOE_dn <- make_degset(DaDaOE_deg, up=FALSE, fc_thresh=1.5)
@@ -243,7 +243,7 @@ dadaOE_dn_eGO <- enrichGO(gene         = dadaOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 ```
 ```{r ORA_dada_overexpression_plots}
@@ -271,7 +271,7 @@ scOE_up_eGO <- enrichGO(gene         = scOE_up$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 # with down genes
 scOE_dn <- make_degset(ScOE_deg, up=FALSE, fc_thresh=1.5)
@@ -279,7 +279,7 @@ scOE_dn_eGO <- enrichGO(gene         = scOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
-                        pvalueCutoff  = 0.01,
+                        pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 ```
 ```{r ORA_sc_overexpression_plots}
@@ -545,7 +545,7 @@ daKD_gse_dutta <- GSEA(geneList=make_degrank(DaKD_deg, mode='log2fc', key='ensem
                        minGSSize = 1,
                        maxGSSize = 1000,
                        eps = 0,
-                       pvalueCutoff = 0.05,
+                       pvalueCutoff = 1,
                        pAdjustMethod = "BH",
                        TERM2GENE = dutta_gmx,
                        TERM2NAME = NA,
@@ -582,7 +582,7 @@ daOE_gse_dutta <- GSEA(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensem
                        minGSSize = 1,
                        maxGSSize = 1000,
                        eps = 0,
-                       pvalueCutoff = 0.05,
+                       pvalueCutoff = 1,
                        pAdjustMethod = "BH",
                        TERM2GENE = dutta_gmx,
                        TERM2NAME = NA,
@@ -617,7 +617,7 @@ dadaOE_gse_dutta <- GSEA(geneList=make_degrank(DaDaOE_deg, mode='log2fc', key='e
                        minGSSize = 1,
                        maxGSSize = 1000,
                        eps = 0,
-                       pvalueCutoff = 0.05,
+                       pvalueCutoff = 1,
                        pAdjustMethod = "BH",
                        TERM2GENE = dutta_gmx,
                        TERM2NAME = NA,
@@ -652,7 +652,7 @@ scOE_gse_dutta <- GSEA(geneList=make_degrank(ScOE_deg, mode='log2fc', key='ensem
                        minGSSize = 1,
                        maxGSSize = 1000,
                        eps = 0,
-                       pvalueCutoff = 0.05,
+                       pvalueCutoff = 1,
                        pAdjustMethod = "BH",
                        TERM2GENE = dutta_gmx,
                        TERM2NAME = NA,
@@ -703,7 +703,7 @@ p + geom_point(alpha=0.2) +
 
 For #2 and #3, I will get back to that later. Meanwhile, I need to make heatmaps and GSEA plots from the results. I will use `genekitr` for this.
 
-#### Plot results for submission
+#### GSEA plots for submission
 
 ```{r genekitr_customisation}
 # the gsea objects generated from clusterProfiler are:
@@ -723,6 +723,7 @@ plotGSEA(scOE_gse_dutta_gtr,
          #show_gene = scOE_gse_dutta_gtr$genelist[seq(1, by=10, length=2),'ID']
          show_gene = c('da', 'sc', 'emc', 'pros', 'poxn', 'Myo31DF', 'ck', 'nub', 'pdm2', 'esg', 'Dl'))
 ```
+
 
 Prepare data to plot heatmaps with NES and padj
 ```{r gseCP_summarise}
@@ -784,25 +785,34 @@ nes.heatmap <- function(NES.df, padj.df) {
 ggplot(NES.df, aes(x=ID, y=condition)) +
   geom_tile(aes(fill=NES), width=1) +
   scale_fill_gradientn(colours=cet_pal(256, name='cbd1')) +
+  #new_scale_fill() +
   geom_point(data=padj.df,
              aes(x=ID, y=condition, colour=-log10(p.adjust)),
-             size=5) +
-  scale_colour_gradientn(colours=cet_pal(256, name='cbd1')) +
+             size=5, shape=4, stroke=3, alpha=1) +
+             #size=5, shape=23, alpha=1) +
+  scale_colour_gradient2(low = 'black',
+                         mid = 'white',
+                         high = cet_pal(3, name='d2')[3],
+                         midpoint = -log(0.05)) +
   coord_equal() +
   theme_bw() +
   ggtitle("Normalised Enrichment Scores") +
-  theme(axis.text.y = element_markdown(),
+  scale_x_discrete(position = "top", expand = expansion(mult = 0, add = 0)) +
+  scale_y_discrete(expand = expansion(mult = 0, add = 0)) +
+  theme(axis.text.x = element_markdown(angle=25, hjust=0,
+                                       face='bold', size=10.5, ),
+        axis.text.y = element_markdown(hjust=1, face='bold', size=12),
         axis.title = element_blank(),
+        axis.ticks = element_blank(),
         panel.grid = element_blank(),
-        axis.ticks = element_blank())
-  
+        panel.border = element_rect(linewidth = 1))
+```
+
+ OK, so this is a problem, I'd like to have NES values even if they are not statistically significant.
+```{r}
 
 
 ```
-
- 
-
-
 ### 4.2 RNAi screen phenotypes (Zhang et al)
 
 
