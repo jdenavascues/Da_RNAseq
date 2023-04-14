@@ -1059,7 +1059,7 @@ rank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
 scOE_gse_glad <- do.call(
   GSEA, c(list(geneList=rank, nPermSimple = 1000000, TERM2GENE = glad_gmx), GSEAparams)
   )
-# saveRDS(scOE_gse_glad, 'output/scOE_gse_glad.RDS')
+saveRDS(scOE_gse_glad, 'output/scOE_gse_glad.RDS')
 # scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
 ```
 
@@ -1095,14 +1095,58 @@ subglad_gsea <- function(deg, gmx, perms=1000) {
         GSEAparams)
       )
   )
-  names(g) <- names(glad_sub_gmx)
+  names(g) <- names(gmx)
   return(g)
 }
 daKD_gse_gladsub   <- subglad_gsea(DaKD_deg, glad_sub_gmx)
 daOE_gse_gladsub   <- subglad_gsea(DaOE_deg, glad_sub_gmx)
 dadaOE_gse_gladsub <- subglad_gsea(DaDaOE_deg, glad_sub_gmx)
 scOE_gse_gladsub   <- subglad_gsea(ScOE_deg, glad_sub_gmx)
+
+g <- lapply(
+    glad_sub_gmx, \(x) do.call(
+      GSEA,
+      c(list(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID'),
+             nPermSimple = 100,
+             TERM2GENE = x),
+        GSEAparams)
+      )
+  )
+  names(g) <- names(glad_sub_gmx)
+
+for (name in names(glad_sub_gmx)) {
+  do.call(GSEA,
+          c(list(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID'),
+             nPermSimple = 100,
+             TERM2GENE = glad_sub_gmx[name][[1]]),
+        GSEAparams)
+      )
+  print(names(glad_sub_gmx[name]))
+}
+
+GSEA(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID'), TERM2GENE=glad_sub_gmx['Matrisome'][[1]], pvalueCutoff=1)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Now we need to pick the first element of each list of `gsea` objects and combine them for the heatmaps:
 ```{r combine_gsea}
