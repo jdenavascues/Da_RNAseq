@@ -749,7 +749,7 @@ You run this separately for the NES or adjusted _p_ values for "historical" reas
 ## gseCP_list is a list of clusterProfiler GSEA objects
 ## conditions is a list with the names of the experimental conditions for those GSEA objects
 ## dvar (data variable) for "name injection" with <data-masking> tidyverse functions
-gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar) {
+gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar, cluster=FALSE) {
   if ( !(dvar %in% c('NES', 'p.adjust')) ) {
     stop("The argument `dvar` must be one of `NES` and `p.adjust`")
   }
@@ -785,6 +785,14 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar) 
     pivot_longer(cols=-c('ID'), names_to = "condition", values_to = dvar)
   df$condition <- factor(df$condition, levels = conditions)
   df$ID <- factor(df$ID, levels = sets.as.factors)
+  if (cluster) {
+    if (dvar != 'NES') warning("Clustering is intended for enrichment scores, not p-values")
+    vectors <- df %>%
+      pivot_wider(names_from = condition, values_from = {{dvar}}) %>%
+      mutate_all(replace_na, 100)
+    clust <- hclust(dist(as.matrix(vectors[2:length(gseCP_list)])))
+    df$ID <- factor(df$ID, levels=vectors$ID[clust$order])
+  }
   return(df)
 }
 ```
@@ -936,19 +944,97 @@ plotGSEA(scOE_gse_zeng_gtr,
 ### 4.3 Gene List Annotation for Drosophila (Hu et al., 2015)
 
 
-GSEA calls:
+```{r collect_GLAD_data}
+gladdir <- paste0(getwd(),'/resources/GLAD')
+gladfiles <- paste(gladdir, list.files(gladdir), sep='/')
+names(gladfiles) <- lapply (
+  gladfiles,
+  \(x) str_split(str_split(x, "GLAD_")[[1]][[2]], '_')[[1]][[1]] )
+read.add <- function(csv, csvlist) {
+  df <- read.csv(csv)
+  df$term <- names(which(csvlist==csv))
+  return(df)
+}
+datas <- lapply(gladfiles, \(x) read.add(x, gladfiles))
+glad_dataset <- do.call(rbind , c(datas, make.row.names=FALSE))
+```
+
+Tidy up the strings for term names:
+```{r cleanup_names}
+substitutions <- c(' signaling pathway$'='',
+                   '\\.'=' ',
+                   'Co '='Co-',
+                   'Non '='Non-',
+                   'RTK| RTK'='',
+                   "DNA "="DNA-",
+                   "TNF "="TNF-",
+                   "TGF "="TGF-",
+                   ' and '=' / ',
+                   'transcription factor|Transcription factor'='TF',
+                   ':'='/')
+glad_dataset <- glad_dataset %>%
+  # remove 1-2-1 substitutions above
+  mutate(across(c(term, Sub.group, Sub.sub.group),
+                \(x) str_replace_all(x, substitutions))) %>%
+  # remove trailing spaces
+  mutate(across(c(term, Sub.group, Sub.sub.group),
+                \(x) str_replace_all(x, '  $| $', ''))) %>%
+  # start all strings with Uppercase
+  mutate(across(c(term, Sub.group, Sub.sub.group),
+                \(x) gsub(x, pattern="(^[[:lower:]])", replacement="\\U\\1", perl=TRUE)))
+# View(glad_dataset %>% select(term, Sub.group, Sub.sub.group) %>% distinct())
+```
+
+Establish the gene sets in tidy dataframes (subdivisions are in lists):
+```{r}
+# major groups
+glad_gmx <- glad_dataset %>%
+  select(term, FBgn) %>%
+  rename(gene = FBgn)
+
+# subgroups
+refine_glad_by <- function(dataset, col.name) {
+  # refined by col.name
+  subgrouping <- dataset %>%
+  # select terms with subgroups
+  filter(!is.na(.data[[col.name]])) %>%
+  # select the term and subgroup cols
+  select(term, {{col.name}}) %>%
+  # get unique pairs of terms/subgroup
+  distinct()
+  # re-make term/gene cols as per subgroups now
+  gmx <- lapply(
+    unique(subgrouping$term),
+    \(x) dataset %>%
+      filter( !is.na(.data[[col.name]]) & term=={{x}} ) %>%
+      select({{col.name}}, FBgn) %>%
+      rename(gene = FBgn, term = {{col.name}})
+    )
+  names(gmx) <- unique(subgrouping$term)
+  return(gmx)
+}
+
+glad_sub_gmx <- refine_glad_by(glad_dataset, 'Sub.group')
+glad_sub2_gmx <- refine_glad_by(glad_dataset, 'Sub.sub.group')
+```
+
+GSEA calls, major lists:
 ```{r hu_GLAD}
 # common gene set
-glad_gmx <- import_from_gmx(paste0(getwd(),'/resources/GLAD.gmx'))
-# no correction of the names of the gene sets for the moment
-# pattern <- setNames(c('',' ',':',''),
-#                     c(regex("pathway$", dotall = TRUE),'.','_','signalling| vs2')
-#                     )
-# glad_gmx$term <- str_replace_all(glad_gmx$term, pattern)
+#old_glad_gmx <- import_from_gmx(paste0(getwd(),'/resources/GLAD.gmx'))
 # common parameters
-GSEAparams <- list(exponent = 1, minGSSize = 1, maxGSSize = 1000, eps = 0, pvalueCutoff = 1,
-                   pAdjustMethod = "BH", TERM2GENE = glad_gmx, TERM2NAME = NA, verbose = TRUE,
-                   seed = FALSE, by = "fgsea")
+GSEAparams <- list(
+  exponent = 1,
+  minGSSize = 1,
+  maxGSSize = 5000,
+  eps = 0,
+  pvalueCutoff = 1,
+  pAdjustMethod = "BH",
+  TERM2NAME = NA,
+  verbose = TRUE,
+  seed = FALSE,
+  by = "fgsea"
+  )
 ```
 
 Now we can simply define the rank file and apply GSEA for each condition:
@@ -956,50 +1042,139 @@ Now we can simply define the rank file and apply GSEA for each condition:
 # da knockdown
 rank <- make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID')
 daKD_gse_glad <- do.call(
-  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
-```
-```{r, message=FALSE}
 # da overexpression
 rank <- make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID')
 daOE_gse_glad <- do.call(
-  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
-```
-```{r, message=FALSE}
 # da:da overexpression
 rank <- make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID')
 dadaOE_gse_glad <- do.call(
-  GSEA, c(list(geneList=rank, nPermSimple = 1000), GSEAparams)
+  GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
-```
-```{r, message=FALSE}
 # scute overexpression
-
-# MUTED AS IT TAKES >20 MIN TO RUN
-
-# rank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
-# scOE_gse_glad <- do.call(
-#   GSEA, c(list(geneList=rank, nPermSimple = 1000000), GSEAparams)
-#   )
-saveRDS(scOE_gse_glad, 'output/scOE_gse_glad.RDS')
+rank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
+scOE_gse_glad <- do.call(
+  GSEA, c(list(geneList=rank, nPermSimple = 1000000, TERM2GENE = glad_gmx), GSEAparams)
+  )
+# saveRDS(scOE_gse_glad, 'output/scOE_gse_glad.RDS')
+# scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
 ```
-```{r}
-scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
-```
+
+___________________________________________________________________________________________________
+
+**I am getting `NA`s here, I don't know why - to be checked when the DESeq2 is done again.**
+
+___________________________________________________________________________________________________
 
 First to produce the dataframes for `ggplot2`:
 ```{r create_dfs_for_NESheatmap, fig.width=16}
 gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
 # `conditions` were defined further above
 sets.as.factors <- unique(glad_gmx$term)
-NES.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'NES')
+NES.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'NES', cluster = TRUE)
 padj.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
 
 subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
 p <- layer.heatmap(NES.df, padj.df, subt)
-p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 100))
 ```
+
+Now let's produce the gsea for the sub-terms of GLAD:
+```{r GLAD_gsea_subplots}
+subglad_gsea <- function(deg, gmx, perms=1000) {
+  g <- lapply(
+    gmx, \(x) do.call(
+      GSEA,
+      c(list(geneList=make_degrank(deg, mode='log2fc', key='ensemblGeneID'),
+             nPermSimple = perms,
+             TERM2GENE = x),
+        GSEAparams)
+      )
+  )
+  names(g) <- names(glad_sub_gmx)
+  return(g)
+}
+daKD_gse_gladsub   <- subglad_gsea(DaKD_deg, glad_sub_gmx)
+daOE_gse_gladsub   <- subglad_gsea(DaOE_deg, glad_sub_gmx)
+dadaOE_gse_gladsub <- subglad_gsea(DaDaOE_deg, glad_sub_gmx)
+scOE_gse_gladsub   <- subglad_gsea(ScOE_deg, glad_sub_gmx)
+```
+
+Now we need to pick the first element of each list of `gsea` objects and combine them for the heatmaps:
+```{r combine_gsea}
+gladsub_gsealists <- c(daKD_gse_gladsub, daOE_gse_gladsub, dadaOE_gse_gladsub, scOE_gse_gladsub)
+
+NES_gladsub_list <- lapply(
+  1:length(glad_sub_gmx),
+  \(x) gseCP_summarise(glad_sub_gmx[[x]],
+                       lapply(gladsub_gsealists, '[[', x),
+                       conditions,
+                       unique(glad_sub_gmx[[x]]$term),
+                       'NES',
+                       cluster = TRUE)
+  )
+                       
+padj_gladsub_list <- lapply(
+  1:length(glad_sub_gmx),
+  \(x) gseCP_summarise(glad_sub_gmx[[x]],
+                       lapply(gladsub_gsealists, '[[', x),
+                       conditions,
+                       unique(glad_sub_gmx[[x]]$term),
+                       'p.adjust')
+  )
+
+subt <- paste0("for Gene List Annotation for Drosophila gene subsets (Hu et al., 2015)",
+               "\n(subsets of ", names(glad_sub_gmx), ")")
+p_list <- lapply(
+  1:length(glad_sub_gmx),
+  \(x) layer.heatmap(NES_gladsub_list[[x]], padj_gladsub_list[[x]], subt[[x]]) +
+    geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+    theme(plot.margin = margin(r = 50))
+)
+```
+
+And for the sub-sub-terms:
+```{r GLAD_gsea_subsubplots}
+daKD_gse_gladsub2   <- subglad_gsea(DaKD_deg, glad_sub2_gmx)
+daOE_gse_gladsub2   <- subglad_gsea(DaOE_deg, glad_sub2_gmx)
+dadaOE_gse_gladsub2 <- subglad_gsea(DaDaOE_deg, glad_sub2_gmx)
+scOE_gse_gladsub2   <- subglad_gsea(ScOE_deg, glad_sub2_gmx)
+gladsub2_gsealists <- c(daKD_gse_gladsub2, daOE_gse_gladsub2, dadaOE_gse_gladsub2, scOE_gse_gladsub2)
+
+NES_gladsub_list <- lapply(
+  1:length(glad_sub_gmx2),
+  \(x) gseCP_summarise(glad_sub_gmx2[[x]],
+                       lapply(gladsub2_gsealists, '[[', x),
+                       conditions,
+                       unique(glad_sub2_gmx[[x]]$term),
+                       'NES',
+                       cluster = TRUE)
+  )
+                       
+padj_gladsub2_list <- lapply(
+  1:length(glad_sub2_gmx),
+  \(x) gseCP_summarise(glad_sub2_gmx[[x]],
+                       lapply(gladsub2_gsealists, '[[', x),
+                       conditions,
+                       unique(glad_sub2_gmx[[x]]$term),
+                       'p.adjust')
+  )
+
+subt <- paste0("for Gene List Annotation for Drosophila gene sub-subsets (Hu et al., 2015)",
+               "\n(subsets of ", names(glad_sub2_gmx), ")")
+p2_list <- lapply(
+  1:length(glad_sub2_gmx),
+  \(x) layer.heatmap(NES_gladsub2_list[[x]], padj_gladsub2_list[[x]], subt[[x]]) +
+    geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+    theme(plot.margin = margin(r = 50))
+)
+```
+
+
 
 #### GSEA plots
 
@@ -1024,9 +1199,3 @@ plotGSEA(scOE_gse_glad_gtr,
 ```
 
 
-# TO-DO NEXT:
-
-- Tidy up the names of the GLAD gene sets
-- Split the sub-types to make separate `layer.heatmaps`
-- Maybe modify `gseCP_summary` to 'trim' the gene sets, maybe passing another column with the subtypes
-- Produce all the heatmaps, and work out how to specify a fixed size ratio between the tile and the text (cowplot, ggarrange...)
