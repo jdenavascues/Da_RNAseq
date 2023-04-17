@@ -238,8 +238,8 @@ dadaOE_up_eGO <- enrichGO(gene         = dadaOE_up$gene_symbol,
                         pvalueCutoff  = 0.05,
                         qvalueCutoff  = 0.05)
 # with down genes
-dadaOE_dn <- make_degset(DaDaOE_deg, up=FALSE, fc_thresh=1.5)
-dadaOE_dn_eGO <- enrichGO(gene         = dadaOE_dn$gene_symbol,
+dadaOE_dn <- make_degset(DaDaOE_deg, up = FALSE, fc_thresh = 1.5)
+dadaOE_dn_eGO <- enrichGO(gene        = dadaOE_dn$gene_symbol,
                         OrgDb         = org.Dm.eg.db,
                         keyType       = 'SYMBOL',
                         pAdjustMethod = "BH",
@@ -258,7 +258,25 @@ up <- dotplot(dadaOE_up_eGO, showCategory=30, label_format=40) +
         panel.grid = element_blank(),
         axis.text.y = element_text(size=9))
 
-suppressWarnings(print(up))
+down <- dotplot(dadaOE_dn_eGO, showCategory=30, label_format=40) +
+  ggtitle("Over-represented GO terms — genes **down** in *esg > da:da*") +
+  scale_colour_gradient(low = cet_pal(3, name='cbd1')[2],
+                        high = cet_pal(3, name='cbd1')[1]) +
+  force_panelsizes(rows = unit(3, "in"), cols = unit(2, "in")) +
+  theme(plot.title = element_markdown(),
+        plot.title.position = 'plot',
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size=9))
+
+tryCatch({ print(up) },
+  error = function (e) {
+    message('Error occurred when trying to plot dotplot')
+    print(e)})
+
+tryCatch({ print(down) },
+  error = function (e) {
+    message('Error occurred when trying to plot dotplot')
+    print(e)})
 ```
 
 For *scute* overexpression:
