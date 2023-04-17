@@ -467,7 +467,7 @@ scOE_GSEgo <- gseGO(geneList=scOE_rank,
                     minGSSize    = 15,
                     maxGSSize    = 1000,
                     pvalueCutoff = 0.05,
-                    nPermSimple = 10000,
+                    nPermSimple = 100000,
                     eps = 0,
                     verbose=F)
 ```

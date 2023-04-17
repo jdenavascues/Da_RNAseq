@@ -68,7 +68,7 @@ rownames(dlist) <- dlist$ensembl_gene_id
 Now, for each condition, we will need to get the lists of misregulated genes for a given threshold of fold change:
 ```{r extract_regulated_sets, warning = FALSE, results='hide'}
 # extract genes with abs(log2FC)
-extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=2) {
+extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=1.5) {
   # fc_thresh must be a positive number
   # list_of_degs is a list of dataframes
   # names_degs is a list of strings
@@ -114,7 +114,7 @@ names_degs <- list(
   as.character(targets[targets$Condition=='DaDaOE','condition_md'][[1]]),
   as.character(targets[targets$Condition=='ScOE','condition_md'][[1]])
   )
-regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=2)
+regs <- extract_regulated_sets(list_of_degs, names_degs, fc_thresh=1.5)
 head(regs,2)
 ```
 
@@ -199,9 +199,9 @@ Using instructions from the [vignette](https://github.com/yanlinlin82/ggvenn):
 ```{r plot_ggvenn_up, fig.width=18, warning=FALSE}
 upvenn <- ggplot(upreg,
                  aes(A = `*da^RNAi^*`,
-                     B = `*da^OVEX^*`,
-                     C = `*da:da^OVEX^*`,
-                     D = `*scute^OVEX^*`)) +
+                     B = `*da*`,
+                     C = `*da:da*`,
+                     D = `*scute*`)) +
   geom_venn(show_percentage = FALSE) +
   theme_void() +
   coord_fixed()
@@ -232,9 +232,9 @@ From the CRAN [readme](https://cran.r-project.org/web/packages/ggVennDiagram/rea
 
 ```{r plot_ggvenndiagram_upreg}
 up <- list(`da RNAi`    = upreg[upreg$`*da^RNAi^*`,]$ensemblGeneID,
-           `da OVEX`    = upreg[upreg$`*da^OVEX^*`,]$ensemblGeneID,
-           `da:da OVEX` = upreg[upreg$`*da:da^OVEX^*`,]$ensemblGeneID,
-           `scute OVEX` = upreg[upreg$`*scute^OVEX^*`,]$ensemblGeneID)
+           `da`    = upreg[upreg$`*da*`,]$ensemblGeneID,
+           `da:da` = upreg[upreg$`*da:da*`,]$ensemblGeneID,
+           `scute` = upreg[upreg$`*scute*`,]$ensemblGeneID)
 venn <- Venn(up)
 data <- process_data(venn)
 upvd <- ggplot() +
@@ -253,9 +253,9 @@ upvd
 ```
 ```{r plot_ggvenndiagram_downreg}
 down <- list(`da RNAi`    = downreg[downreg$`*da^RNAi^*`,]$ensemblGeneID,
-             `da OVEX`    = downreg[downreg$`*da^OVEX^*`,]$ensemblGeneID,
-             `da:da OVEX` = downreg[downreg$`*da:da^OVEX^*`,]$ensemblGeneID,
-             `scute OVEX` = downreg[downreg$`*scute^OVEX^*`,]$ensemblGeneID)
+             `da`    = downreg[downreg$`*da*`,]$ensemblGeneID,
+             `da:da` = downreg[downreg$`*da:da*`,]$ensemblGeneID,
+             `scute` = downreg[downreg$`*scute*`,]$ensemblGeneID)
 venn <- Venn(down)
 data <- process_data(venn)
 upvd <- ggplot() +
@@ -287,16 +287,16 @@ upsetplot <- upset(
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[2]],
          active = T),
     list(query = intersects, 
-         params = list('da OVEX'),
+         params = list('da'),
          #color = cet_pal(n = 5, name = "cbd1", alpha = 1)[[4]],
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[2]],
          active = T),
     list(query = intersects, 
-         params = list('da:da OVEX'),
+         params = list('da:da'),
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[2]],
          active = T),
     list(query = intersects, 
-         params = list('scute OVEX'),
+         params = list('scute'),
          #color = cet_pal(n = 5, name = "cbd1", alpha = 1)[[4]],
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[2]],
          active = T)
@@ -309,12 +309,12 @@ upsetplot <- upset(
   #                      2),
   set_size.show = TRUE,
   set_size.numbers_size = 6,
-  set_size.scale_max = 400,
+  set_size.scale_max = (ceiling(max(sapply( up , length)) / 100)*100)+50, # analog to plyr::round_any
   # intersections
   main.bar.color = 'gray50',
   # c(rep("black", 6), rep('gray50', 8), rep("black", 6), rep('gray50', 7)),
   group.by = 'sets',
-  order.by = "freq",
+  order.by = "degree",
   # labels
   number.angles = 0,
   mainbar.y.label = "Condition Intersections",
@@ -372,15 +372,15 @@ downsetplot <- upset(
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[1]],
          active = T),
     list(query = intersects, 
-         params = list('da OVEX'),
+         params = list('da'),
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[1]],
          active = T),
     list(query = intersects, 
-         params = list('da:da OVEX'),
+         params = list('da:da'),
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[1]],
          active = T),
     list(query = intersects, 
-         params = list('scute OVEX'),
+         params = list('scute'),
          color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[1]],
          active = T)
     ),
@@ -389,11 +389,11 @@ downsetplot <- upset(
   sets.bar.color = cet_pal(n = 2, name = "cbd1", alpha = 1)[[1]],
   set_size.show = TRUE,
   set_size.numbers_size = 6,
-  set_size.scale_max = 850,
+  set_size.scale_max = ceiling(max(sapply( down , length)) / 100)*100,
   # intersections
   main.bar.color = 'gray50',
   group.by = 'sets',
-  order.by = "freq",
+  order.by = "degree",
   # labels
   number.angles = 0,
   mainbar.y.label = "Condition Intersections",

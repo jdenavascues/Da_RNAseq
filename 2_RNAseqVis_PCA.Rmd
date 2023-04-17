@@ -247,7 +247,7 @@ There seems to be little point in drawing an arbitrary threshold, so I move on w
 ### Pseudocounts _without_ batch correction
 
 ```{r}
-pca <- prcomp(t(assay(vsd)), center=TRUE, scale=TRUE)
+pca <- prcomp(t(assay(vsd)), center=TRUE) # scaling no longer necessary, as these are log-transformed
 scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
 summary(pca)
 xtitle <- paste0('**PC1** (', round(summary(pca)$importance['Proportion of Variance','PC1']*100,1), ' %)')
@@ -307,7 +307,7 @@ Again, very similar to the other 3, which is (marginally) reassuring.
 Now, if we do the same with the **batch-corrected** VS-transformed data:
 ```{r}
 vsd_bcorr <- readRDS('output/vst_pseudocounts_batchCorrected.RDS')
-pca <- prcomp(t(assay(vsd_bcorr)), center=TRUE, scale=TRUE)
+pca <- prcomp(t(assay(vsd_bcorr)), center=TRUE)
 scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
 summary(pca)
 xtitle <- paste0('**PC1** (', round(summary(pca)$importance['Proportion of Variance','PC1']*100,1), ' %)')
@@ -372,14 +372,14 @@ So we do:
 
 # min(tpmNormalisedCounts) is 0 so we need to add 1 for log transform
 tpm_log_bcorr <- removeBatchEffect(
-  <- log2(tpmNormalisedCounts+1),
+  log2(tpmNormalisedCounts+1),
   batch=vsd$batch,
   design=model.matrix(~condition, colData(vsd) )
 )
 # reverse log transform
 tpm_bcorr <- 2^tpm_log_bcorr
 # use in PCA
-pca <- prcomp(t(tpm_bcorr), center=TRUE, scale=TRUE)
+pca <- prcomp(t(tpm_bcorr), center=TRUE)
 scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
 summary(pca)
 xtitle <- paste0('**PC1** (', round(summary(pca)$importance['Proportion of Variance','PC1']*100,1), ' %)')
@@ -431,7 +431,7 @@ It is not too bad, but it is not any less artificial that using pseudocounts fro
 If we do not reverse the transform:
 
 ```{r}
-pca <- prcomp(t(tpm_log_bcorr), center=TRUE, scale=TRUE)
+pca <- prcomp(t(tpm_log_bcorr), center=TRUE)
 scores <- data.frame(targets$sampleIDs, pca$x[,1:2])
 summary(pca)
 xtitle <- paste0('**PC1** (', round(summary(pca)$importance['Proportion of Variance','PC1']*100,1), ' %)')
