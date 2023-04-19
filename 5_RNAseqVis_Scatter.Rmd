@@ -66,7 +66,7 @@ As discussed previously, we do not really need TPM values here, as the `baseMean
 Now make a data frame with the status of each gene (up/down/non-regulated) for each condition:
 ```{r extract_regulated_sets2, warning=FALSE}
 # first define the function
-extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=2, cols) {
+extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=1.5, cols) {
   # fc_thresh must be a positive number
   # list_of_degs is a list of dataframes
   # names_degs is a list of strings
@@ -110,7 +110,7 @@ list_of_degs <- list('kd'=DaKD_deg, 'da'=DaOE_deg,
 names_degs <- list('DaKD','DaOE','DaDaOE','ScOE')
 cols.oi <- c('log2FoldChange', 'padj', 'baseMean',
              'gene_symbol', 'ensemblGeneID')
-fc_thresh <- 2
+fc_thresh <- 1.5
 regs <- extract_regulated_sets2(list_of_degs, names_degs, fc_thresh=fc_thresh, cols=cols.oi)
 
 # attach the results to the DEG data frame for each condition
@@ -122,7 +122,7 @@ ScOE_deg$reg <- regs$ScOE
 
 Load `genes_of_interest`:
 ```{r load_GOI}
-genes_of_interest <- read_excel('resources/genes_of_interest.xlsx')
+genes_of_interest <- read_excel('resources/genes_of_interest.xlsx', sheet='core')
 ```
 
 
@@ -174,6 +174,7 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
                         segment.square  = FALSE,
                         segment.inflect = TRUE),
                     color         = '#6E5C03', # ==hue, <ligthness than than "#A89008"
+                    fontface = 'bold',
                     segment.alpha = 0.8,
                     segment.linetype = 3,
                     hjust = 0,
@@ -186,7 +187,8 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
                     force_pull    = repulsion$force_pull,
                     max.overlaps  = Inf,
                     xlim          = repulsion$xlims.up,    # NA repels from edges
-                    ylim          = repulsion$ylims.up) +
+                    ylim          = repulsion$ylims.up,
+                    seed = 42) +
     # mark special genes if downreg
     geom_text_repel(data = deg %>% filter(gene_symbol %in% goi_list$gene_symbol &
                                                log2FoldChange < 0),
@@ -196,6 +198,7 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
                         segment.square  = FALSE,
                         segment.inflect = TRUE),
                      color         = '#0565AF', # ==hue, <ligthness than "#3A90FE"
+                     fontface = 'bold',
                      segment.alpha = 0.8,
                      segment.linetype = 3,
                      hjust = 0,
@@ -208,7 +211,8 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
                      force_pull    = repulsion$force_pull,
                      max.overlaps  = Inf,
                      xlim          = repulsion$xlims.dn,             # NA repels from edges
-                     ylim          = repulsion$ylims.dn) +
+                     ylim          = repulsion$ylims.dn,
+                     seed = 42) +
     # genotype label
     geom_richtext(
       data = annotations,
@@ -243,24 +247,31 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
 
 Apply this to the *daughterless* knockdown:
 ```{r ggmaplot2_da_knockdown}
+# define genes of interest
+# GoI <- genes_of_interest %>%
+#   filter(`FlyCellAtlas marker`=='T') %
+#   filter((`fate promoted` == 'EE') | 
+#          (`fate promoted` == 'EC')) %>%
+#   dplyr::select(gene_symbol)
+  
 # genes of interest dysregulated in this condition
 goi_kd <- DaKD_deg %>% dplyr::filter(
   gene_symbol %in% genes_of_interest$gene_symbol &
   reg!='non' &
-  abs(log2FoldChange)>2 &
+  abs(log2FoldChange)>1.5 &
   padj<0.05
   )
 
-repulsion <- list(box.padding = 0.8,
-                  point.padding = 0.5,
+repulsion <- list(box.padding = 0.5,
+                  point.padding = 0.8,
                   nudge_x = 3,
                   nudge_y = 2,
                   force = 2,
-                  force_pull = 0.05,
-                  xlims.up = c(6, NA),
-                  ylims.up = c(6, NA),
-                  xlims.dn = c(6, NA),
-                  ylims.dn = c(6, NA))
+                  force_pull = 0.2,
+                  xlims.up = c(18, NA),
+                  ylims.up = c(10, NA),
+                  xlims.dn = c(10, NA),
+                  ylims.dn = c(-10, NA))
 
 ggmaplot2 (deg = DaKD_deg,
            fc_thresh = fc_thresh,
