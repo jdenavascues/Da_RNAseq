@@ -28,7 +28,7 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(
   # data manip.
-  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr,
+  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr, biomaRt,
   # plotting
   pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork,
 # convenience
@@ -525,7 +525,7 @@ suppressWarnings(print(gsep))
 I think that the signals are not strong enough to give anything meaningful. It may be better to use more focused gene sets ----|>
 
 
-## 4 Enrichment analysis of custom gene sets
+## 4 Gene set enrichment analysis of custom gene sets
 
 
 ### 4.0 Getting ready
@@ -553,12 +553,13 @@ import_from_gmx <- function(gmxfile) {
 ```
 
 
+### 4.1 Cell-type specific transcriptomes (Dutta et al., 2015)
 
-### 4.1 Cell-type specific transcriptomes (Dutta et al, Doupée et al)
 
-
+First let's run `clusterProfiler::GSEA`:
 ```{r dutta}
 dutta_gmx <- import_from_gmx(paste0(getwd(),'/resources/Dutta.gmx'))
+
 daKD_gse_dutta <- GSEA(geneList=make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID'),
                        exponent = 1,
                        minGSSize = 1,
@@ -571,31 +572,7 @@ daKD_gse_dutta <- GSEA(geneList=make_degrank(DaKD_deg, mode='log2fc', key='ensem
                        verbose = TRUE,
                        seed = FALSE,
                        by = "fgsea")
-```
 
-```{r}
-daKD_gse_dutta_log <- daKD_gse_dutta
-daKD_gse_dutta_log@result$p.adjust <- -log10(daKD_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
-d <- ifelse(sort(daKD_gse_dutta_log$NES) > 0,
-            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
-# plot
-gsep <- dotplot(daKD_gse_dutta_log,
-                x='NES', 
-                showCategory=number_of_terms,
-                label_format=60
-                ) +
-  ggtitle("Enriched/depleted GO terms in *esg > da^RNAi^*") +
-  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
-                        high = cet_pal(3, name='d2')[3]) +
-  labs(color = '-log~10~(*p*)') +
-  theme(plot.title = element_markdown(),
-        plot.title.position = 'panel',
-        legend.title = element_markdown(),
-        panel.grid = element_blank(),
-        axis.text.y = element_text(size=9, colour=d))
-print(gsep)
-```
-```{r}
 daOE_gse_dutta <- GSEA(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID'),
                        exponent = 1,
                        minGSSize = 1,
@@ -608,29 +585,7 @@ daOE_gse_dutta <- GSEA(geneList=make_degrank(DaOE_deg, mode='log2fc', key='ensem
                        verbose = TRUE,
                        seed = FALSE,
                        by = "fgsea")
-daOE_gse_dutta_log <- daOE_gse_dutta
-daOE_gse_dutta_log@result$p.adjust <- -log10(daOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
-d <- ifelse(sort(daOE_gse_dutta_log$NES) > 0,
-            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
-# plot
-gsep <- dotplot(daOE_gse_dutta_log,
-                x='NES', 
-                showCategory=number_of_terms,
-                label_format=60
-                ) +
-  ggtitle("Enriched/depleted GO terms in *esg > da*") +
-  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
-                        high = cet_pal(3, name='d2')[3]) +
-  labs(color = '-log~10~(*p*)') +
-  theme(plot.title = element_markdown(),
-        plot.title.position = 'panel',
-        legend.title = element_markdown(),
-        panel.grid = element_blank(),
-        axis.text.y = element_text(size=9, colour=d))
-print(gsep)
-```
 
-```{r}
 dadaOE_gse_dutta <- GSEA(geneList=make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID'),
                        exponent = 1,
                        minGSSize = 1,
@@ -643,29 +598,7 @@ dadaOE_gse_dutta <- GSEA(geneList=make_degrank(DaDaOE_deg, mode='log2fc', key='e
                        verbose = TRUE,
                        seed = FALSE,
                        by = "fgsea")
-dadaOE_gse_dutta_log <- dadaOE_gse_dutta
-dadaOE_gse_dutta_log@result$p.adjust <- -log10(dadaOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
-d <- ifelse(sort(dadaOE_gse_dutta_log$NES) > 0,
-            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
-# plot
-gsep <- dotplot(dadaOE_gse_dutta_log,
-                x='NES', 
-                showCategory=number_of_terms,
-                label_format=60
-                ) +
-  ggtitle("Enriched/depleted GO terms in *esg > da:da*") +
-  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
-                        high = cet_pal(3, name='d2')[3]) +
-  labs(color = '-log~10~(*p*)') +
-  theme(plot.title = element_markdown(),
-        plot.title.position = 'panel',
-        legend.title = element_markdown(),
-        panel.grid = element_blank(),
-        axis.text.y = element_text(size=9, colour=d))
-print(gsep)
-```
 
-```{r}
 scOE_gse_dutta <- GSEA(geneList=make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID'),
                        exponent = 1,
                        minGSSize = 1,
@@ -678,32 +611,13 @@ scOE_gse_dutta <- GSEA(geneList=make_degrank(ScOE_deg, mode='log2fc', key='ensem
                        verbose = TRUE,
                        seed = FALSE,
                        by = "fgsea")
-scOE_gse_dutta_log <- scOE_gse_dutta
-scOE_gse_dutta_log@result$p.adjust <- -log10(scOE_gse_dutta_log@result$p.adjust) # use @slot and $column to assign
-d <- ifelse(sort(scOE_gse_dutta_log$NES) > 0,
-            cet_pal(2, name='cbd1')[2], cet_pal(2, name='cbd1')[1])
-# plot
-gsep <- dotplot(scOE_gse_dutta_log,
-                x='NES', 
-                showCategory=number_of_terms,
-                label_format=60
-                ) +
-  ggtitle("Enriched/depleted GO terms in *esg > scute*") +
-  scale_colour_gradient(low = cet_pal(3, name='d2')[2],
-                        high = cet_pal(3, name='d2')[3]) +
-  labs(color = '-log~10~(*p*)') +
-  theme(plot.title = element_markdown(),
-        plot.title.position = 'panel',
-        legend.title = element_markdown(),
-        panel.grid = element_blank(),
-        axis.text.y = element_text(size=9, colour=d))
-print(gsep)
 ```
 
-Now I need to make heatmaps and GSEA plots from the results. I will use `genekitr` for this.
 
-#### GSEA plots for submission
+#### GSEA plots
 
+
+Now I need to make GSEA plots from the results. I will use `genekitr` for this.
 ```{r genekitr_customisation}
 # the gsea objects generated from clusterProfiler are:
 # daKD_gse_dutta, daOE_gse_dutta, dadaOE_gse_dutta, scOE_gse_dutta
@@ -723,6 +637,10 @@ plotGSEA(scOE_gse_dutta_gtr,
          show_gene = c('da', 'sc', 'emc', 'pros', 'poxn', 'Myo31DF', 'ck', 'nub', 'pdm2', 'esg', 'Dl'))
 ```
 
+
+#### Layered heatmaps to display NES across conditions and sets
+
+##### Layered heatmaps: prepare the data
 
 Prepare data to plot heatmaps with NES and padj with the function below, `gseCP_summarise`. This is likely more complicated than it needs to be, as (now) all the GSEA objects have the same number of gene sets, but that is because I am running `GSEA` with `pvalueCutoff = 1`. If you run it with `pvalueCutoff<1`, non-significant gene sets do not even show up in the `@result` slot. In case this is happening, `gseCP_summarise` does a full join.
 You run this separately for the NES or adjusted _p_ values for "historical" reasons (I didn't think it through, and had to restore to new syntax that now I don't want to throw away :).
@@ -793,6 +711,8 @@ NES.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'NES
 padj.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
 ```
 
+##### Layered heatmaps: plotting function
+
 And we can use this to plot the results in the way we want:
 ```{r layer.heatmap}
 layer.heatmap <- function(NES.df, padj.df, subt) {
@@ -838,6 +758,8 @@ layer.heatmap <- function(NES.df, padj.df, subt) {
   return(p)
 }
 ```
+
+##### Layered heatmaps for Dutta et al. (2015) gene sets
 
 ```{r}
 subt <- "for cell-type specific gene sets (Dutta et al., 2015)"
@@ -888,7 +810,9 @@ scOE_gse_zeng <- do.call(
   )
 ```
 
-The dot plots have not been that interesting and are very bulky, so I move straight to the heatmaps.
+
+#### Layered heatmaps
+
 
 First to produce the dataframes for `ggplot2`:
 ```{r create_dfs_for_NESheatmap}
@@ -929,6 +853,9 @@ plotGSEA(scOE_gse_zeng_gtr,
 ### 4.3 Gene List Annotation for Drosophila (Hu et al., 2015)
 
 
+#### Prepare the data for sub.group analyses
+
+
 ```{r collect_GLAD_data}
 gladdir <- paste0(getwd(),'/resources/GLAD')
 gladfiles <- paste(gladdir, list.files(gladdir), sep='/')
@@ -956,7 +883,10 @@ substitutions <- c(' signaling pathway$'='',
                    "TGF "="TGF-",
                    ' and '=' / ',
                    'transcription factor|Transcription factor'='TF',
-                   ':'='/')
+                   ':'='/',
+                   '^HLH'='bHLH',
+                   '^Basic'='b',
+                   '\\|'='')
 glad_dataset <- glad_dataset %>%
   # remove 1-2-1 substitutions above
   mutate(across(c(term, Sub.group, Sub.sub.group),
@@ -969,7 +899,7 @@ glad_dataset <- glad_dataset %>%
                 \(x) gsub(x, pattern="(^[[:lower:]])", replacement="\\U\\1", perl=TRUE))) %>%
   # substitute empty strings for NAs
   mutate_at(c('term', 'Sub.group', 'Sub.sub.group'), ~na_if(., ''))
-View(glad_dataset %>% select(term, Sub.group, Sub.sub.group) %>% distinct())
+View(glad_dataset %>% select(term, Sub.group, Sub.sub.group) %>% distinct() %>% filter(term=='TF/DNA-binding'))
 ```
 
 Establish the gene sets in tidy dataframes (subdivisions are in lists):
@@ -1058,6 +988,10 @@ dadaOE_gse_glad <- do.call(
 scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
 ```
 
+
+#### Layered heatmaps, main GLAD terms
+
+
 First to produce the dataframes for `ggplot2`:
 ```{r create_dfs_for_NESheatmap, fig.width=16}
 gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
@@ -1071,6 +1005,10 @@ p <- layer.heatmap(NES.df, padj.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
   theme(plot.margin = margin(r = 100))
 ```
+
+
+#### GSEA and layered heatmaps for GLAD sub.terms 
+
 
 Now let's produce the gsea for the sub-terms of GLAD:
 ```{r GLAD_gsea_subplots}
@@ -1093,6 +1031,7 @@ dadaOE_gse_gladsub <- subglad_gsea(DaDaOE_deg, glad_sub_gmx)
 # scOE_gse_gladsub   <- subglad_gsea(ScOE_deg, glad_sub_gmx, perms=100000)
 # saveRDS(scOE_gse_gladsub, 'output/scOE_gse_gladsub.RDS')
 scOE_gse_gladsub <- readRDS('output/scOE_gse_gladsub.RDS')
+scOE_gse_gladsub['Human Disease'] <- NULL
 ```
 
 Now it is a matter of looping over the names of the GLAD terms with sub/sub-groups, and gather the NES/p.adj data for each condition and each term subdivision.
@@ -1146,12 +1085,39 @@ p_list <- lapply(
 ```
 
 And to visualise:
-```{r, fig.width=100}
-p_list[[1]] + p_list[[2]] + p_list[[3]] + p_list[[4]] + p_list[[5]] + p_list[[6]] + p_list[[7]] +
-  plot_layout(ncol = 7)
+```{r}
+p_list[[2]]
 ```
 
-#### And now for the sub-sub-terms
+```{r}
+p_list[[1]]
+```
+
+```{r}
+p_list[[3]]
+```
+
+
+
+```{r}
+p_list[[4]]
+```
+
+```{r}
+ p_list[[5]]
+```
+
+```{r}
+p_list[[6]]
+```
+
+```{r}
+p_list[[7]]
+```
+
+
+#### GSEA and layered heatmaps for GLAD sub.sub.terms 
+
 
 Run GSEA:
 ```{r GLAD_gsea_subsubplots}
@@ -1195,8 +1161,9 @@ And plotting:
 ```{r}
 subt <- paste0("for Gene List Annotation for Drosophila gene sub-subsets (Hu et al., 2015)",
                "\n(subsets of ", names(glad_sub_gmx), ")")
+names(subt) <- names(glad_sub_gmx)
 p2_list <- lapply(
-  1:length(glad_sub2_gmx),
+  names(glad_sub2_gmx),
   \(x) layer.heatmap(NES_gladsub2_list[[x]], padj_gladsub2_list[[x]], subt[[x]]) +
     geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
     theme(plot.margin = margin(r = 50))
@@ -1219,12 +1186,211 @@ p2_list[[3]]
 p2_list[[4]]
 ```
 
-# CONTINUE HERE
+NAs are probably due to small groups where the members are simply not detected in the DEG set.
 
-to-do
 
-- find out why there are NAs in the plots above, correct if possible, replot in minimal form
-- make some enrichment plots
+#### GSEA plots
+
+##### For sub-sub-terms
+
+```{r genekitr_customisation_usage1}
+for (x in 1:length(daKD_gse_gladsub2)) daKD_gse_gladsub2[[x]]@organism <- 'dm'
+for (x in 1:length(daOE_gse_gladsub2)) daOE_gse_gladsub2[[x]]@organism <- 'dm'
+for (x in 1:length(dadaOE_gse_gladsub2)) dadaOE_gse_gladsub2[[x]]@organism <- 'dm'
+for (x in 1:length(scOE_gse_gladsub2)) scOE_gse_gladsub2[[x]]@organism <- 'dm'
+
+daKD_gse_gladsub2_gtr <- list(
+  importCP(daKD_gse_gladsub2$`Major signaling pathways`, type = 'gsea'),
+  importCP(daKD_gse_gladsub2$Matrisome, type = 'gsea'),
+  importCP(daKD_gse_gladsub2$`TF/DNA-binding`, type = 'gsea'),
+  importCP(daKD_gse_gladsub2$Transporters, type = 'gsea')
+  )
+names(daKD_gse_gladsub2_gtr) <- names(daKD_gse_gladsub2)
+
+daOE_gse_gladsub2_gtr <- list(
+  importCP(daOE_gse_gladsub2$`Major signaling pathways`, type = 'gsea'),
+  importCP(daOE_gse_gladsub2$Matrisome, type = 'gsea'),
+  importCP(daOE_gse_gladsub2$`TF/DNA-binding`, type = 'gsea'),
+  importCP(daOE_gse_gladsub2$Transporters, type = 'gsea')
+  )
+names(daOE_gse_gladsub2_gtr) <- names(daOE_gse_gladsub2)
+
+dadaOE_gse_gladsub2_gtr <- list(
+  importCP(dadaOE_gse_gladsub2$`Major signaling pathways`, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub2$Matrisome, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub2$`TF/DNA-binding`, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub2$Transporters, type = 'gsea')
+  )
+names(dadaOE_gse_gladsub2_gtr) <- names(dadaOE_gse_gladsub2)
+
+scOE_gse_gladsub2_gtr <- list(
+  importCP(scOE_gse_gladsub2$`Major signaling pathways`, type = 'gsea'),
+  importCP(scOE_gse_gladsub2$Matrisome, type = 'gsea'),
+  importCP(scOE_gse_gladsub2$`TF/DNA-binding`, type = 'gsea'),
+  importCP(scOE_gse_gladsub2$Transporters, type = 'gsea')
+  )
+names(scOE_gse_gladsub2_gtr) <- names(scOE_gse_gladsub2)
+```
+
+```{r}
+plotGSEA(daKD_gse_gladsub2_gtr[[1]],
+         plot_type = "classic",
+         show_pathway = daKD_gse_gladsub2_gtr[[1]]$gsea_df$ID,
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
+```
+```{r}
+plotGSEA(scOE_gse_gladsub2_gtr[[1]],
+         plot_type = "classic",
+         show_pathway = scOE_gse_gladsub2_gtr[[1]]$gsea_df$ID,
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl', 'N', 'H', 'Su(H)', 'E(spl)malpha-HLH'))
+```
+
+##### For sub-terms
+
+```{r genekitr_customisation_usage1}
+for (x in 1:length(daKD_gse_gladsub)) daKD_gse_gladsub[[x]]@organism <- 'dm'
+for (x in 1:length(daOE_gse_gladsub)) daOE_gse_gladsub[[x]]@organism <- 'dm'
+for (x in 1:length(dadaOE_gse_gladsub)) dadaOE_gse_gladsub[[x]]@organism <- 'dm'
+for (x in 1:length(scOE_gse_gladsub)) scOE_gse_gladsub[[x]]@organism <- 'dm'
+
+daKD_gse_gladsub_gtr <- list(
+  importCP(daKD_gse_gladsub$Kinases, type = 'gsea'),
+  importCP(daKD_gse_gladsub$`Major signaling pathways`, type = 'gsea'),
+  importCP(daKD_gse_gladsub$Matrisome, type = 'gsea'),
+  importCP(daKD_gse_gladsub$Metabolic, type = 'gsea'),
+  importCP(daKD_gse_gladsub$Phosphatases, type = 'gsea'),
+  importCP(daKD_gse_gladsub$`TF/DNA-binding`, type = 'gsea'),
+  importCP(daKD_gse_gladsub$Transporters, type = 'gsea')
+  )
+names(daKD_gse_gladsub_gtr) <- names(daKD_gse_gladsub)
+
+daOE_gse_gladsub_gtr <- list(
+  importCP(daOE_gse_gladsub$Kinases, type = 'gsea'),
+  importCP(daOE_gse_gladsub$`Major signaling pathways`, type = 'gsea'),
+  importCP(daOE_gse_gladsub$Matrisome, type = 'gsea'),
+  importCP(daOE_gse_gladsub$Metabolic, type = 'gsea'),
+  importCP(daOE_gse_gladsub$Phosphatases, type = 'gsea'),
+  importCP(daOE_gse_gladsub$`TF/DNA-binding`, type = 'gsea'),
+  importCP(daOE_gse_gladsub$Transporters, type = 'gsea')
+  )
+names(daOE_gse_gladsub_gtr) <- names(daOE_gse_gladsub)
+
+dadaOE_gse_gladsub_gtr <- list(
+  importCP(dadaOE_gse_gladsub$Kinases, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$`Major signaling pathways`, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$Matrisome, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$Metabolic, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$Phosphatases, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$`TF/DNA-binding`, type = 'gsea'),
+  importCP(dadaOE_gse_gladsub$Transporters, type = 'gsea')
+  )
+names(dadaOE_gse_gladsub_gtr) <- names(dadaOE_gse_gladsub)
+
+scOE_gse_gladsub_gtr <- list(
+  importCP(scOE_gse_gladsub$Kinases, type = 'gsea'),
+  importCP(scOE_gse_gladsub$`Major signaling pathways`, type = 'gsea'),
+  importCP(scOE_gse_gladsub$Matrisome, type = 'gsea'),
+  importCP(scOE_gse_gladsub$Metabolic, type = 'gsea'),
+  importCP(scOE_gse_gladsub$Phosphatases, type = 'gsea'),
+  importCP(scOE_gse_gladsub$`TF/DNA-binding`, type = 'gsea'),
+  importCP(scOE_gse_gladsub$Transporters, type = 'gsea')
+  )
+names(scOE_gse_gladsub_gtr) <- names(scOE_gse_gladsub)
+```
+
+```{r}
+plotGSEA(daKD_gse_gladsub_gtr[[1]],
+         plot_type = "classic",
+         show_pathway = daKD_gse_gladsub_gtr[[1]]$gsea_df$ID,
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
+```
+```{r}
+plotGSEA(scOE_gse_gladsub_gtr[[1]],
+         plot_type = "classic",
+         show_pathway = scOE_gse_gladsub_gtr[[1]]$gsea_df$ID,
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl', 'N', 'H', 'Su(H)', 'E(spl)malpha-HLH'))
+```
+
+##### For main terms
+
+```{r genekitr_customisation_usage1}
+daKD_gse_glad@organism <- 'dm'
+daOE_gse_glad@organism <- 'dm'
+dadaOE_gse_glad@organism <- 'dm'
+scOE_gse_glad@organism <- 'dm'
+
+daKD_gse_glad_gtr <- importCP(daKD_gse_glad, type = 'gsea')
+daOE_gse_glad_gtr <- importCP(daOE_gse_glad, type = 'gsea')
+dadaOE_gse_glad_gtr <- importCP(dadaOE_gse_glad, type = 'gsea')
+scOE_gse_glad_gtr <- importCP(scOE_gse_glad, type = 'gsea')
+```
+
+```{r}
+plotGSEA(daKD_gse_glad_gtr,
+         plot_type = "classic",
+         show_pathway = daKD_gse_glad_gtr$gsea_df$ID[c(2,3,6)],
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
+```
+```{r}
+plotGSEA(scOE_gse_glad_gtr,
+         plot_type = "classic",
+         show_pathway = scOE_gse_glad_gtr$gsea_df$ID[c(2,3,6)],
+         show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl', 'N', 'H', 'Su(H)', 'E(spl)malpha-HLH'))
+```
+
+
+### 5. Metabolic signatures using KEGG
+
+
+
+#### 5.1 Get the NCBI (Entrez)Gene IDs
+
+
+The KEGG database works with these, so neither the _gene symbol_ nor the _Ensembl ID_ will work here.
+```{r NCBI_GeneIDs}
+ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
+                     dataset="dmelanogaster_gene_ensembl",
+                     host = "https://oct2022.archive.ensembl.org")
+attributes <- listAttributes(ensembl)
+ezlist <- getBM(attributes=c('entrezgene_id', 'flybase_gene_id', 'ensembl_gene_id', 'external_gene_name'), mart = ensembl)
+```
+
+```{r KEGG_conversion_dme}
+kegconv <- read.csv('https://rest.kegg.jp/conv/ncbi-geneid/dme/', sep = '\t', header = FALSE)
+kegconv <- kegconv %>%
+  rename(dme = V1, geneid = V2) %>%
+  mutate(dme = str_replace(dme, "dme:", ""),
+         geneid = str_replace(geneid, "ncbi-geneid:", ""))
+```
+Now we can find:
+
+- **KEGG pathways enriched in genes DOWN in _daughterless_ knock-down**:
+```{r}
+geneIDs <- ezlist %>%
+  filter(external_gene_name %in% daKD_dn$gene_symbol) %>%
+  dplyr::select(entrezgene_id) %>% unlist()
+geneList <- kegconv %>%
+  filter(geneid %in% geneIDs) %>%
+  dplyr::select(dme) %>% as.vector()
+  
+kg <- enrichKEGG(gene         = geneList,
+                 organism     = 'dme',
+                 pvalueCutoff = 0.05)
+head(kg)
+```
+
+```{r}
+scOE_rank <- make_degrank(ScOE_deg, mode='log2fc')
+# GSEA
+scOE_gseKEGG <- gseKEGG(geneList=scOE_rank,
+                        organism='dme',
+                        minGSSize    = 15,
+                        maxGSSize    = 1000,
+                        pvalueCutoff = 0.05,
+                        nPermSimple = 1000,
+                        verbose=F)
+```
+
 - have a look at the metabolic signatures, for interpretation
 - move on to RcisTarget
 
@@ -1234,44 +1400,67 @@ to-do
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#### GSEA plots
-
-Prepare the data:
-```{r genekitr_custom_use}
-daKD_gse_glad@organism <- 'dm'
-daOE_gse_glad@organism <- 'dm'
-dadaOE_gse_glad@organism <- 'dm'
-scOE_gse_glad@organism <- 'dm'
-daKD_gse_glad_gtr   <- importCP(daKD_gse_glad, type = 'gsea')
-daOE_gse_glad_gtr   <- importCP(daOE_gse_glad, type = 'gsea')
-dadaOE_gse_glad_gtr <- importCP(dadaOE_gse_glad, type = 'gsea')
-scOE_gse_glad_gtr   <- importCP(scOE_gse_glad, type = 'gsea')
-```
-
-Tentative plot:
 ```{r}
-plotGSEA(scOE_gse_glad_gtr,
-         plot_type = "classic",
-         show_pathway = scOE_gse_glad_gtr$gsea_df$ID[c(1,6)],
-         show_gene = c() )
+df <- data.frame(gene_symbol = c("nAChRalpha2", "Act42A", "Ama", "ase", "asp", "Col4a1"),
+                 ensemblGeneID = c("FBgn0000039", "FBgn0000043", "FBgn0000071",
+                                   "FBgn0000137", "FBgn0000140", "FBgn0000299"),
+                 log2FoldChange = c(-2.235647, -1.672559, -2.975020, -3.340225, -1.915317, -4.276045))
+
+ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
+                     dataset="dmelanogaster_gene_ensembl",
+                     host = "https://oct2022.archive.ensembl.org")
+attributes <- listAttributes(ensembl)
+ezlist <- getBM(attributes=c('entrezgene_id', 'ensembl_gene_id', 'external_gene_name'), mart = ensembl)
+
+df$`ncbi-geneid` <- ezlist %>%
+  filter(ensembl_gene_id %in% df$ensemblGeneID) %>%
+  dplyr::select(entrezgene_id) %>% unlist()
+
+kg <- enrichKEGG(gene         = as.vector(as.character(df$`ncbi-geneid`)),
+                 organism     = 'dme',
+                 pvalueCutoff = 0.05)
+
+kegconv <- read.csv('https://rest.kegg.jp/conv/ncbi-geneid/dme/', sep = '\t', header = FALSE)
+kegconv <- kegconv %>%
+  dplyr::rename(dme = V1, geneid = V2) %>%
+  mutate(dme = str_replace(dme, "dme:", ""),
+         geneid = str_replace(geneid, "ncbi-geneid:", ""))
+
+df$`kegg` <- kegconv %>%
+  filter(geneid %in% df$`ncbi-geneid`) %>%
+  dplyr::select(dme) %>% unlist()
+
 ```
+
+
+```{r}
+library("pathview")
+rk <- make_degrank(DaKD_deg, mode='log2fc')
+dfrk <- data.frame(gene_symbol=names(rk))
+dfrk$geneid <- ezlist[match(dfrk$gene_symbol, ezlist$external_gene_name), 'entrezgene_id']
+#dfrk$keg <- kegconv[match(dfrk$geneid, kegconv$geneid), 'dme']
+#names(rk) <- dfrk$keg
+#rk <- rk[-which(is.na(dfrk$keg))]
+names(rk) <- dfrk$geneid
+dme_M00892 <- pathview(gene.data  = rk,
+                     pathway.id = "dme00520",
+                     species    = "dme",
+                     limit      = list(gene=max(abs(rk)), cpd=1))
+
+library(gage)
+kg.gs <- kegg.gsets(species='dme', id.type='entrez')
+# turn kg.gs into something one can use with clusterProfiler::GSEA and that's it.
+
+```
+https://www.r-bloggers.com/2015/12/tutorial-rna-seq-differential-expression-pathway-analysis-with-sailfish-deseq2-gage-and-pathview/
+
+
+
+
+
+
+
+
+
 
 
