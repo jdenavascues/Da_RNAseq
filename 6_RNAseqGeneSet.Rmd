@@ -11,6 +11,11 @@ output:
     theme: readable
     df_print: paged
 ---
+
+# Analysis of DESeq2 results with gene set enrichment
+
+## 0 Boilerplate
+
 ```{r set-publication-theme, echo=FALSE, cache=FALSE}
 ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
 ```
@@ -28,9 +33,9 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(
   # data manip.
-  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr, biomaRt,
+  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr, biomaRt, gage,
   # plotting
-  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork,
+  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork, pathview,
 # convenience
   here)
 ```
@@ -61,7 +66,6 @@ dir.create(figdir, showWarnings = FALSE)
 ```
 
 
-# Analysis of DESeq2 results with gene set enrichment
 
 
 ## 1 Getting ready
@@ -666,9 +670,9 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar, 
       # bangbang !! operator with as.name function
       # glue syntax "{}"
       # dynamic assignment :=
-      full_join(select(gse, all_of({{dvar}}), ID), empty, by='ID') %>%
+      full_join(dplyr::select(gse, all_of({{dvar}}), ID), empty, by='ID') %>%
         mutate( "{dvar}" := !!as.name(paste0(dvar,".x")) ) %>%
-        select( {{dvar}}, ID )
+        dplyr::select( {{dvar}}, ID )
       )
   }
   # purr::map to convert the gse_list from S4 objects to their @result slots 
@@ -1339,128 +1343,196 @@ plotGSEA(scOE_gse_glad_gtr,
 ```
 
 
-### 5. Metabolic signatures using KEGG
+## 5 Metabolic signatures using KEGG
 
 
-
-#### 5.1 Get the NCBI (Entrez)Gene IDs
-
-
-The KEGG database works with these, so neither the _gene symbol_ nor the _Ensembl ID_ will work here.
-```{r NCBI_GeneIDs}
-ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
-                     dataset="dmelanogaster_gene_ensembl",
-                     host = "https://oct2022.archive.ensembl.org")
-attributes <- listAttributes(ensembl)
-ezlist <- getBM(attributes=c('entrezgene_id', 'flybase_gene_id', 'ensembl_gene_id', 'external_gene_name'), mart = ensembl)
-```
-
-```{r KEGG_conversion_dme}
-kegconv <- read.csv('https://rest.kegg.jp/conv/ncbi-geneid/dme/', sep = '\t', header = FALSE)
-kegconv <- kegconv %>%
-  rename(dme = V1, geneid = V2) %>%
-  mutate(dme = str_replace(dme, "dme:", ""),
-         geneid = str_replace(geneid, "ncbi-geneid:", ""))
-```
-Now we can find:
-
-- **KEGG pathways enriched in genes DOWN in _daughterless_ knock-down**:
-```{r}
-geneIDs <- ezlist %>%
-  filter(external_gene_name %in% daKD_dn$gene_symbol) %>%
-  dplyr::select(entrezgene_id) %>% unlist()
-geneList <- kegconv %>%
-  filter(geneid %in% geneIDs) %>%
-  dplyr::select(dme) %>% as.vector()
-  
-kg <- enrichKEGG(gene         = geneList,
-                 organism     = 'dme',
-                 pvalueCutoff = 0.05)
-head(kg)
-```
-
-```{r}
-scOE_rank <- make_degrank(ScOE_deg, mode='log2fc')
-# GSEA
-scOE_gseKEGG <- gseKEGG(geneList=scOE_rank,
-                        organism='dme',
-                        minGSSize    = 15,
-                        maxGSSize    = 1000,
-                        pvalueCutoff = 0.05,
-                        nPermSimple = 1000,
-                        verbose=F)
-```
-
-- have a look at the metabolic signatures, for interpretation
-- move on to RcisTarget
+### 5.1 Prepare data
 
 
-
-
-
-
-
-```{r}
-df <- data.frame(gene_symbol = c("nAChRalpha2", "Act42A", "Ama", "ase", "asp", "Col4a1"),
-                 ensemblGeneID = c("FBgn0000039", "FBgn0000043", "FBgn0000071",
-                                   "FBgn0000137", "FBgn0000140", "FBgn0000299"),
-                 log2FoldChange = c(-2.235647, -1.672559, -2.975020, -3.340225, -1.915317, -4.276045))
-
+This gets us the NCBI gene IDs (a.k.a. entrez gene ID):
+```{r get_ncbi-geneid_keys}
 ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
                      dataset="dmelanogaster_gene_ensembl",
                      host = "https://oct2022.archive.ensembl.org")
 attributes <- listAttributes(ensembl)
 ezlist <- getBM(attributes=c('entrezgene_id', 'ensembl_gene_id', 'external_gene_name'), mart = ensembl)
-
-df$`ncbi-geneid` <- ezlist %>%
-  filter(ensembl_gene_id %in% df$ensemblGeneID) %>%
-  dplyr::select(entrezgene_id) %>% unlist()
-
-kg <- enrichKEGG(gene         = as.vector(as.character(df$`ncbi-geneid`)),
-                 organism     = 'dme',
-                 pvalueCutoff = 0.05)
-
-kegconv <- read.csv('https://rest.kegg.jp/conv/ncbi-geneid/dme/', sep = '\t', header = FALSE)
-kegconv <- kegconv %>%
-  dplyr::rename(dme = V1, geneid = V2) %>%
-  mutate(dme = str_replace(dme, "dme:", ""),
-         geneid = str_replace(geneid, "ncbi-geneid:", ""))
-
-df$`kegg` <- kegconv %>%
-  filter(geneid %in% df$`ncbi-geneid`) %>%
-  dplyr::select(dme) %>% unlist()
-
+ezlist <- drop_na(ezlist)
 ```
+
+This gets us the KEGG sets for _Drosophila_:
+```{r get_kegg_sets}
+kegg.sets.dme <- kegg.gsets(species='dme', id.type='entrez')
+```
+
+Let us now separate signaling and metabolic pathways (easier to plot later)
+```{r tidy_kegg_sets_sig}
+# separate sig.naling vs met.abolic pathways and tidy
+kegg.sig_tidy <- NULL
+KSIG <- kegg.sets.dme$kg.sets[kegg.sets.dme$sig.idx]
+for ( x in 1:length(KSIG) ) {
+  df <- data.frame(gene = KSIG[[x]])
+  df$term <- names(KSIG)[[x]]
+  kegg.sig_tidy <- rbind(kegg.sig_tidy, dplyr::select(df, term, gene))
+}
+# split term names into KEGG ID and description
+kegg.sig_tidy <- kegg.sig_tidy %>%
+  separate_wider_delim(term, ' ', names = c('term', 'description'),
+                       too_many = 'merge')
+# show
+kegg.sig_tidy[as.integer(seq(from=1, to=nrow(kegg.sig_tidy), length.out = 10)),]
+```
+
+Now metabolic ones:
+Let us now separate signaling and metabolic pathways (easier to plot later)
+```{r tidy_kegg_sets_met}
+# separate sig.naling vs met.abolic pathways and tidy
+kegg.met_tidy <- NULL
+KMET <- kegg.sets.dme$kg.sets[kegg.sets.dme$met.idx]
+for ( x in 1:length(KMET) ) {
+  df <- data.frame(gene = KMET[[x]])
+  df$term <- names(KMET)[[x]]
+  kegg.met_tidy <- rbind(kegg.met_tidy, dplyr::select(df, term, gene))
+}
+# split term names into KEGG ID and description
+kegg.met_tidy <- kegg.met_tidy %>%
+  separate_wider_delim(term, ' ', names = c('term', 'description'),
+                       too_many = 'merge')
+kegg.met_tidy[as.integer(seq(from=1, to=nrow(kegg.met_tidy), length.out = 10)),]
+```
+
+
+### 5.2 Signatures
+
+
+To simplify the calls:
+```{r}
+# common parameters
+kegg.sig_gmx <- kegg.sig_tidy %>% dplyr::select(description, gene)
+names(kegg.sig_gmx) <- c('term', 'gene')
+GSEAparams_sig <- list(exponent = 1, minGSSize = 1, maxGSSize = 5000, eps = 0, pvalueCutoff = 1,
+                       pAdjustMethod = "BH", TERM2GENE = kegg.sig_gmx, TERM2NAME = NA, verbose = TRUE,
+                       seed = FALSE, by = "fgsea")
+
+kegg.met_gmx <- kegg.met_tidy %>% dplyr::select(description, gene)
+names(kegg.met_gmx) <- c('term', 'gene')
+GSEAparams_met <- list(exponent = 1, minGSSize = 1, maxGSSize = 5000, eps = 0, pvalueCutoff = 1,
+                       pAdjustMethod = "BH", TERM2GENE = kegg.met_gmx, TERM2NAME = NA, verbose = TRUE,
+                       seed = FALSE, by = "fgsea")
+```
+
+Now we can do, for each condition with DEG data:
+```{r, message=FALSE}
+# create rank with ncbi-geneid keys instead of gene symbols
+daKD_kegg_rank <- daKD_rank 
+names(daKD_kegg_rank) <- ezlist[match(names(daKD_rank), ezlist$external_gene_name), 'entrezgene_id']
+# some names will be NA because they are not in the NCBI db (?), so to filter them:
+daKD_kegg_rank <- daKD_kegg_rank[-na.action(na.omit(names(daKD_kegg_rank)))]
+# now we can do the GSEA safely
+daKD_gse_ksig   <- do.call(GSEA, c(list(geneList=daKD_kegg_rank),   GSEAparams_sig))
+daKD_gse_kmet   <- do.call(GSEA, c(list(geneList=daKD_kegg_rank),   GSEAparams_met))
+
+# prep
+daOE_kegg_rank <- daOE_rank 
+names(daOE_kegg_rank) <- ezlist[match(names(daOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+daOE_kegg_rank <- daOE_kegg_rank[-na.action(na.omit(names(daOE_kegg_rank)))]
+# GSEA
+daOE_gse_ksig   <- do.call(GSEA, c(list(geneList=daOE_kegg_rank),   GSEAparams_sig))
+daOE_gse_kmet   <- do.call(GSEA, c(list(geneList=daOE_kegg_rank),   GSEAparams_met))
+
+#prep
+dadaOE_kegg_rank <- dadaOE_rank 
+names(dadaOE_kegg_rank) <- ezlist[match(names(dadaOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+dadaOE_kegg_rank <- dadaOE_kegg_rank[-na.action(na.omit(names(dadaOE_kegg_rank)))]
+# GSEA
+dadaOE_gse_ksig <- do.call(GSEA, c(list(geneList=dadaOE_kegg_rank), GSEAparams_sig))
+dadaOE_gse_kmet <- do.call(GSEA, c(list(geneList=dadaOE_kegg_rank), GSEAparams_met))
+
+#prep
+scOE_kegg_rank <- scOE_rank 
+names(scOE_kegg_rank) <- ezlist[match(names(scOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+scOE_kegg_rank <- scOE_kegg_rank[-na.action(na.omit(names(scOE_kegg_rank)))]
+# GSEA
+scOE_gse_ksig   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_sig))
+scOE_gse_kmet   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_met))
+```
+
+#### Layered heatmaps
+
+First to produce the dataframes for `ggplot2`, for _signaling_ pathways:
+```{r create_dfs_for_NESheatmap, fig.width=100}
+gse_list <- list(scOE_gse_ksig, dadaOE_gse_ksig, daOE_gse_ksig, daKD_gse_ksig)
+# `conditions` were defined further above
+sets.as.factors <- unique(kegg.sig_tidy$description)
+NES.df <- gseCP_summarise(kegg.sig_gmx, gse_list, conditions, sets.as.factors, 'NES', cluster=TRUE)
+padj.df <- gseCP_summarise(kegg.sig_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+
+subt <- "for KEGG *signaling* pathways"
+p <- layer.heatmap(NES.df, padj.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+```
+
+Now _metabolic_ pathways:
+```{r create_dfs_for_NESheatmap, fig.width=100}
+gse_list <- list(scOE_gse_kmet, dadaOE_gse_kmet, daOE_gse_kmet, daKD_gse_kmet)
+# `conditions` were defined further above
+sets.as.factors <- unique(kegg.met_tidy$description)
+NES.df <- gseCP_summarise(kegg.met_gmx, gse_list, conditions, sets.as.factors, 'NES', cluster=TRUE)
+padj.df <- gseCP_summarise(kegg.met_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+
+subt <- "for KEGG *metabolic* pathways"
+p <- layer.heatmap(NES.df, padj.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+```
+
+
+# NEXT STEPS
+
+- create filter option for gseCPsummarise so that one can remove conditions where no NES is significant.
+- do some plots of individual pathways
+- move on to RcisTarget
+
+
+### 5.3 Plotting
+
+
+To plot the Path Views as PDF (and if that is not available, as PNG)
+```{r create_handled_pathview}
+handled_pathview <- function(params) {
+  withCallingHandlers(
+    do.call ( pathview, c(params, kegg.native = FALSE) ),
+    message = function(m) {
+      if( length(grep('Try \"kegg.native=T\" instead!', m$message))==1) {
+        cat('OK, I will try that\n')
+        do.call ( pathview, c(params, kegg.native = TRUE) )
+        cat('now it is done with native KEGG PNG\n>>>>> Ignore what comes below: <<<<<\n')
+      }
+    }
+  )
+}
+
+# fixed parameters
+fixed <- list(
+  low = list(gene = cet_pal(3, name='cbd1')[1], cpd = "blue"),
+  mid = list(gene = cet_pal(3, name='cbd1')[2], cpd = "gray"),
+  high = list(gene = cet_pal(3, name='cbd1')[3], cpd = "yellow"),
+  species = "dme",
+  kegg.dir = figdir,
+  new.signature=FALSE,
+  res = 600)
+```
+
 
 
 ```{r}
-library("pathview")
-rk <- make_degrank(DaKD_deg, mode='log2fc')
-dfrk <- data.frame(gene_symbol=names(rk))
-dfrk$geneid <- ezlist[match(dfrk$gene_symbol, ezlist$external_gene_name), 'entrezgene_id']
-#dfrk$keg <- kegconv[match(dfrk$geneid, kegconv$geneid), 'dme']
-#names(rk) <- dfrk$keg
-#rk <- rk[-which(is.na(dfrk$keg))]
-names(rk) <- dfrk$geneid
-dme_M00892 <- pathview(gene.data  = rk,
-                     pathway.id = "dme00520",
-                     species    = "dme",
-                     limit      = list(gene=max(abs(rk)), cpd=1))
-
-library(gage)
-kg.gs <- kegg.gsets(species='dme', id.type='entrez')
-# turn kg.gs into something one can use with clusterProfiler::GSEA and that's it.
-
+params <- c(
+  list(gene.data = daKD_rank,
+       pathway.id = "dme03008",
+       out.suffix = "dme03008",
+       gene.idtype = 'SYMBOL',
+       # limit = list(gene=max(abs(daKD_rank)), cpd=1)
+       limit = list(gene=5, cpd=1)
+       ),
+  fixed)
+handled_pathview(params)
 ```
-https://www.r-bloggers.com/2015/12/tutorial-rna-seq-differential-expression-pathway-analysis-with-sailfish-deseq2-gage-and-pathview/
-
-
-
-
-
-
-
-
-
-
 
