@@ -1,0 +1,266 @@
+---
+title: "Analysis of DESeq2 results with gene set enrichment"
+description: "DEG analysis based on DESeq2 and GSEA"
+principal investigator: "Joaquín de Navascués"
+researcher: "Joaquín de Navascués"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: 'hide'
+    theme: readable
+    df_print: paged
+---
+
+# Analysis of DESeq2 results with gene set enrichment
+
+## 0 Boilerplate
+
+```{r set-publication-theme, echo=FALSE, cache=FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+```
+
+```{r setup, echo = FALSE, cache = FALSE}
+knitr::opts_chunk$set(dev = 'png', 
+                      fig.align = 'center', fig.height = 7, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+```
+
+**Libraries and external code needed:**
+```{r load_libraries, warning=FALSE, echo=FALSE}
+if (!require("librarian")) install.packages("librarian")
+# data
+librarian::shelf(
+  # data manip.
+  dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr, biomaRt, gage,
+  # plotting
+  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork, pathview,
+# convenience
+  here)
+
+if(!exists("gseCP_summarise", mode="function")) source("utils.R")
+```
+
+**Set working directory where the script is**
+```{r setwd}
+if (Sys.getenv("USER")=="JQ") {
+  setwd("/Users/JQ/Documents/_CODE REPOS/GitHub/Da_RNAseq")
+} else if (Sys.getenv("RSTUDIO")==1) {
+  setwd( dirname(rstudioapi::getSourceEditorContext(id = NULL)$path) ) # gets what is in the editor
+} else {
+  setwd(here::here())
+  d <- str_split(getwd(),'/')[[1]][length(str_split(getwd(),'/')[[1]])]
+  if (d != 'Da_RNAseq') { stop(
+    paste0("Could not set working directory automatically to where this",
+           " script resides.\nPlease do `setwd()` manually"))
+    }
+}
+getwd()
+```
+
+**Path to definitive images (outside repo):**
+```{r define_dir2figs}
+figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
+                   paste0(tail(str_split(getwd(),'/')[[1]],1), '_figures')),
+                 collapse='/')
+dir.create(figdir, showWarnings = FALSE)
+```
+
+
+## 1 Getting ready
+
+
+This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and gene symbol:
+```{r load_DEG_data}
+# experimental design and labels
+targets <- readRDS('output/targets.RDS')
+# DEG data
+DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
+DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
+DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
+ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
+head(
+  ScOE_deg %>% dplyr::select(gene_symbol, ensemblGeneID, baseMean, log2FoldChange, padj),
+  1
+)
+```
+
+#### Collect NCBI gene IDs to match KEGG database
+
+This gets us the NCBI gene IDs (a.k.a. entrez gene ID):
+```{r get_ncbi-geneid_keys}
+ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL",
+                     dataset="dmelanogaster_gene_ensembl",
+                     host = "https://oct2022.archive.ensembl.org")
+attributes <- listAttributes(ensembl)
+ezlist <- getBM(attributes=c('entrezgene_id', 'ensembl_gene_id', 'external_gene_name'), mart = ensembl)
+ezlist <- drop_na(ezlist)
+```
+
+This gets us the KEGG sets for _Drosophila_:
+```{r get_kegg_sets}
+kegg.sets.dme <- kegg.gsets(species='dme', id.type='entrez')
+```
+
+Let us now separate signaling and metabolic pathways (easier to plot later)
+```{r tidy_kegg_sets_sig}
+# separate sig.naling vs met.abolic pathways and tidy
+kegg.sig_tidy <- NULL
+KSIG <- kegg.sets.dme$kg.sets[kegg.sets.dme$sig.idx]
+for ( x in 1:length(KSIG) ) {
+  df <- data.frame(gene = KSIG[[x]])
+  df$term <- names(KSIG)[[x]]
+  kegg.sig_tidy <- rbind(kegg.sig_tidy, dplyr::select(df, term, gene))
+}
+# split term names into KEGG ID and description
+kegg.sig_tidy <- kegg.sig_tidy %>%
+  separate_wider_delim(term, ' ', names = c('term', 'description'),
+                       too_many = 'merge')
+# show
+kegg.sig_tidy[as.integer(seq(from=1, to=nrow(kegg.sig_tidy), length.out = 10)),]
+```
+
+Now metabolic ones:
+Let us now separate signaling and metabolic pathways (easier to plot later)
+```{r tidy_kegg_sets_met}
+# separate sig.naling vs met.abolic pathways and tidy
+kegg.met_tidy <- NULL
+KMET <- kegg.sets.dme$kg.sets[kegg.sets.dme$met.idx]
+for ( x in 1:length(KMET) ) {
+  df <- data.frame(gene = KMET[[x]])
+  df$term <- names(KMET)[[x]]
+  kegg.met_tidy <- rbind(kegg.met_tidy, dplyr::select(df, term, gene))
+}
+# split term names into KEGG ID and description
+kegg.met_tidy <- kegg.met_tidy %>%
+  separate_wider_delim(term, ' ', names = c('term', 'description'),
+                       too_many = 'merge')
+kegg.met_tidy[as.integer(seq(from=1, to=nrow(kegg.met_tidy), length.out = 10)),]
+```
+
+
+## 2 Metabolic signatures using KEGG
+
+
+To simplify the calls:
+```{r}
+# common parameters
+kegg.sig_gmx <- kegg.sig_tidy %>% dplyr::select(description, gene)
+names(kegg.sig_gmx) <- c('term', 'gene')
+GSEAparams_sig <- list(exponent = 1, minGSSize = 1, maxGSSize = 5000, eps = 0, pvalueCutoff = 1,
+                       pAdjustMethod = "BH", TERM2GENE = kegg.sig_gmx, TERM2NAME = NA, verbose = TRUE,
+                       seed = FALSE, by = "fgsea")
+
+kegg.met_gmx <- kegg.met_tidy %>% dplyr::select(description, gene)
+names(kegg.met_gmx) <- c('term', 'gene')
+GSEAparams_met <- list(exponent = 1, minGSSize = 1, maxGSSize = 5000, eps = 0, pvalueCutoff = 1,
+                       pAdjustMethod = "BH", TERM2GENE = kegg.met_gmx, TERM2NAME = NA, verbose = TRUE,
+                       seed = FALSE, by = "fgsea")
+```
+
+Now we can do, for each condition with DEG data, GSEA using the signaling or metabolic pathways as gene set collections:
+```{r, message=FALSE}
+# create rank with ncbi-geneid keys instead of gene symbols
+daKD_rank <- make_degrank(DaKD_deg, mode='log2fc', key='gene_symbol')
+daKD_kegg_rank <- daKD_rank 
+names(daKD_kegg_rank) <- ezlist[match(names(daKD_rank), ezlist$external_gene_name), 'entrezgene_id']
+# some names will be NA because they are not in the NCBI db (?), so to filter them:
+daKD_kegg_rank <- daKD_kegg_rank[-na.action(na.omit(names(daKD_kegg_rank)))]
+# now we can do the GSEA safely
+daKD_gse_ksig   <- do.call(GSEA, c(list(geneList=daKD_kegg_rank),   GSEAparams_sig))
+daKD_gse_kmet   <- do.call(GSEA, c(list(geneList=daKD_kegg_rank),   GSEAparams_met))
+
+# prep
+daOE_rank <- make_degrank(DaOE_deg, mode='log2fc', key='gene_symbol')
+daOE_kegg_rank <- daOE_rank 
+names(daOE_kegg_rank) <- ezlist[match(names(daOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+daOE_kegg_rank <- daOE_kegg_rank[-na.action(na.omit(names(daOE_kegg_rank)))]
+# GSEA
+daOE_gse_ksig   <- do.call(GSEA, c(list(geneList=daOE_kegg_rank),   GSEAparams_sig))
+daOE_gse_kmet   <- do.call(GSEA, c(list(geneList=daOE_kegg_rank),   GSEAparams_met))
+
+#prep
+dadaOE_rank <- make_degrank(DaDaOE_deg, mode='log2fc', key='gene_symbol')
+dadaOE_kegg_rank <- dadaOE_rank 
+names(dadaOE_kegg_rank) <- ezlist[match(names(dadaOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+dadaOE_kegg_rank <- dadaOE_kegg_rank[-na.action(na.omit(names(dadaOE_kegg_rank)))]
+# GSEA
+dadaOE_gse_ksig <- do.call(GSEA, c(list(geneList=dadaOE_kegg_rank), GSEAparams_sig))
+dadaOE_gse_kmet <- do.call(GSEA, c(list(geneList=dadaOE_kegg_rank), GSEAparams_met))
+
+#prep
+scOE_rank <- make_degrank(ScOE_deg, mode='log2fc', key='gene_symbol')
+scOE_kegg_rank <- scOE_rank 
+names(scOE_kegg_rank) <- ezlist[match(names(scOE_rank), ezlist$external_gene_name), 'entrezgene_id']
+scOE_kegg_rank <- scOE_kegg_rank[-na.action(na.omit(names(scOE_kegg_rank)))]
+# GSEA
+scOE_gse_ksig   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_sig))
+scOE_gse_kmet   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_met))
+```
+
+#### Layered heatmaps
+
+First to produce the dataframes for `ggplot2`, for _signaling_ pathways:
+```{r create_dfs_for_NESheatmap}
+gse_list <- list(scOE_gse_ksig, dadaOE_gse_ksig, daOE_gse_ksig, daKD_gse_ksig)
+# `conditions` were defined further above
+sets.as.factors <- unique(kegg.sig_tidy$description)
+layerhm.df <- gseCP_summarise(kegg.sig_gmx, gse_list, conditions, sets.as.factors, cluster=TRUE, nsig.out = TRUE)
+
+subt <- "for KEGG *signaling* pathways"
+p <- layer.heatmap(layerhm.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 200))
+```
+
+Now _metabolic_ pathways:
+```{r create_dfs_for_NESheatmap}
+gse_list <- list(scOE_gse_kmet, dadaOE_gse_kmet, daOE_gse_kmet, daKD_gse_kmet)
+# `conditions` were defined further above
+sets.as.factors <- unique(kegg.met_tidy$description)
+layerhm.df <- gseCP_summarise(kegg.met_gmx, gse_list, conditions, sets.as.factors, cluster=TRUE, nsig.out = TRUE)
+
+subt <- "for KEGG *metabolic* pathways"
+p <- layer.heatmap(layerhm.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 200))
+```
+
+#### Pathway plots
+
+Obtain KEGG id for the desired pathways:
+```{r}
+path.ids <- kegg.met_tidy %>%
+  dplyr::select(term, description) %>%
+  distinct()
+```
+
+To simplify calls
+```{r handled_pathview_param}
+# fixed parameters
+fixed <- list(
+  low = list(gene = cet_pal(3, name='cbd1')[1], cpd = "blue"),
+  mid = list(gene = cet_pal(3, name='cbd1')[2], cpd = "gray"),
+  high = list(gene = cet_pal(3, name='cbd1')[3], cpd = "yellow"),
+  species = "dme",
+  kegg.dir = figdir,
+  new.signature=FALSE,
+  res = 600)
+```
+
+Plot pathway for Tryptophan metabolism:
+```{r}
+(path.ids %>% filter(description == 'Tryptophan metabolism'))$term
+```
+```{r}
+params <- c(
+  list(gene.data = cbind(daKD_rank, dadaOE_rank = dadaOE_rank[names(daKD_rank)]),
+       pathway.id = "dme00380",
+       out.suffix = "daRNAi_dada",
+       gene.idtype = 'SYMBOL',
+       limit = list(gene=1, cpd=1)
+       ),
+  fixed)
+handled_pathview(params)
+```
