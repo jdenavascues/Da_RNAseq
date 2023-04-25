@@ -152,10 +152,25 @@ motrich_pure8 <- cisTarget(geneLists, mR__8new, motifAnnot = mA__8new)
 motrich_hybr8 <- cisTarget(geneLists, mR__8new, motifAnnot = mA_10cls)
 ```
 
+NEXT STEPS:
+
+make the downloading from the RMD file:
+https://stat.ethz.ch/R-manual/R-devel/library/utils/html/download.file.html
+
+Merge the TF matches from v8 pure and hybrid
+identify the TF family for each gene, make new column
 
 To assign to gene families:
 ```{r}
 geneg <- read.delim('resources/gene_group_data_fb_2023_02.tsv', skip=8)#comment.char = '#')
 names(geneg)[[1]] <- 'FB_group_id'
 ```
+
+make tables for paper.
+
+start writing the bloody paper.
+
+
+
+
 
