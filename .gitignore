@@ -1,3 +1,7 @@
 
 *.tbl
 *.feather
+resources/motifdbs/motif_annotations_dm6_v10.RDS
+resources/motifdbs/motif_annotations_dm6_v8.RDS
+resources/motifdbs/motif_rankings_dm6_v10.RDS
+resources/motifdbs/motif_rankings_dm6_v8.RDS

@@ -109,11 +109,7 @@ Now we need the motif Rankings and Annotations, from the [Stein Aerts' lab websi
 Matching them correctly is a bit confusing to me, so I first look carefully at the different options:
 I download for _D. melanogaster_ release 6.02:
 
-- VERSION 8 OLD
-
-  - [Motif rankings `.feather` file v8 (old)](https://resources.aertslab.org/cistarget/databases/old/drosophila_melanogaster/dm6/flybase_r6.02/mc8nr/gene_based/dm6-5kb-upstream-full-tx-11species.mc8nr.feather) (1.38Gb)
-
-- VERSION 8 NEW
+- VERSION 8 (NEW)
 
   - [Motif rankings `.feather` file v8](https://resources.aertslab.org/cistarget/databases/drosophila_melanogaster/dm6/flybase_r6.02/mc8nr/gene_based/dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather) (782Mb) 
   - [Motif annotation table file v8](https://resources.aertslab.org/cistarget/motif2tf/motifs-v8-nr.flybase-m0.001-o0.0.tbl) (40Mb)
@@ -123,24 +119,76 @@ I download for _D. melanogaster_ release 6.02:
   - [Motif rankings `.feather` file v10](https://resources.aertslab.org/cistarget/databases/drosophila_melanogaster/dm6/flybase_r6.02/mc_v10_clust/gene_based/dm6_v10_clust.genes_vs_motifs.rankings.feather) (47Mb) 
   - [Motif annotation table file v10](https://resources.aertslab.org/cistarget/motif2tf/motifs-v10nr_clust-nr.flybase-m0.001-o0.0.tbl) (69Mb)
 
-- VERSION 10 'public'
-
-  - [Zipped file with motif annotations for fly, human, mouse and chicken ](https://resources.aertslab.org/cistarget/motif_collections/v10nr_clust_public/v10nr_clust_public.zip) (as individual `.tbl` files; 86Mb)
-
-
-(**This should be made more 'programmatic' when possible**)
 
 Load the different motif Annotations (mA) and motif Rankings (mR)
 ```{r}
-mA__8new <- importAnnotations("resources/motifdbs/mc8nr/motifs-v8-nr.flybase-m0.001-o0.0.tbl")
-mA_10cls <- importAnnotations("resources/motifdbs/mc_v10_clust/motifs-v10nr_clust-nr.flybase-m0.001-o0.0.tbl")
-mA_10pub <- importAnnotations("resources/motifdbs/mc_v10_clust/motifs-v10-nr.flybase-m0.00001-o0.0.tbl")
+rkURLbase <- paste0('https://resources.aertslab.org/cistarget/databases/',
+                   'drosophila_melanogaster/dm6/flybase_r6.02')
+rk_v8_url <- paste0(rkURLbase, '/mc8nr/gene_based/',
+                   'dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather')
+an_v8_url <- paste0('https://resources.aertslab.org/cistarget/motif2tf/',
+                    'motifs-v8-nr.flybase-m0.001-o0.0.tbl')
+rk_v10_url <- paste0(rkURLbase, '/mc_v10_clust/gene_based/',
+                     'dm6_v10_clust.genes_vs_motifs.rankings.feather')
+an_v10_url <- paste0('https://resources.aertslab.org/cistarget/motif2tf/',
+                     'motifs-v10nr_clust-nr.flybase-m0.001-o0.0.tbl')
 
-mR__8old <- importRankings("resources/motifdbs/mc8nr/old/dm6-5kb-upstream-full-tx-11species.mc8nr.feather")
-mR__8new <- importRankings("resources/motifdbs/mc8nr/dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather")
-  mR__8new@rankings <- dplyr::relocate(mR__8new@rankings, motifs)
-mR_10cls <- importRankings("resources/motifdbs/mc_v10_clust/dm6_v10_clust.genes_vs_motifs.rankings.feather")
-  mR_10cls@rankings <- dplyr::relocate(mR_10cls@rankings, motifs)
+# establish the resource sub-directory
+motifpath <- paste0(getwd(), "/resources/motifdbs")
+if (!dir.exists( motifpath )) dir.create(motifpath)
+# read (or download, if the first time) the rankings and annotations 
+tryCatch(
+  { readRDS(paste0(motifpath, "/motif_annotations_dm6_v8.RDS")) },
+  error = function(e) {
+    message(e)
+    message('\n"motif_annotations_dm6_v8" is not available locally -- it will be downloaded and saved.')
+    motif_annotations_dm6_v8 <- importAnnotations(an_v8_url)
+    saveRDS(motif_annotations_dm6_v8, paste0(motifpath, "/motif_annotations_dm6_v8.RDS"))
+    }
+)
+tryCatch(
+  { readRDS(paste0(motifpath, "/motif_rankings_dm6_v8.RDS")) },
+  error = function(e) {
+    message('\n"motif_rankings_dm6_v8.RDS" is not available locally -- it will be downloaded and saved.\n\n')
+    message(e)
+    options(timeout = max(1500, getOption("timeout"))) # number is in seconds, and may depend on the connection
+    temp <- tempfile()
+    download.file(rk_v8_url, temp, mode='wget')
+    motif_rankings_dm6_v8 <- importRankings(temp)
+    #unlink(temp)
+    saveRDS(motif_rankings_dm6_v8, paste0(motifpath, "/motif_rankings_dm6_v8.RDS"))
+    }
+)
+tryCatch(
+  { readRDS(paste0(motifpath, "/motif_annotations_dm6_v10.RDS")) },
+  error = function(e) {
+    message(e)
+    message('\n"motif_annotations_dm6_v10" is not available locally -- it will be downloaded and saved.')
+    motif_annotations_dm6_v10 <- importAnnotations(an_v10_url)
+    saveRDS(motif_annotations_dm6_v10, paste0(motifpath, "/motif_annotations_dm6_v10.RDS"))
+    }
+)
+tryCatch(
+  { readRDS(paste0(motifpath, "/motif_rankings_dm6_v10.RDS")) },
+  error = function(e) {
+    message('\n"motif_rankings_dm6_v10.RDS" is not available locally -- it will be downloaded and saved.\n\n')
+    message(e)
+    options(timeout = max(600, getOption("timeout"))) # number is in seconds, and may depend on the connection
+    temp <- tempfile()
+    download.file(rk_v10_url, temp, mode='wget')
+    motif_rankings_dm6_v10 <- importRankings(temp)
+    unlink(temp)
+    saveRDS(motif_rankings_dm6_v10, paste0(motifpath, "/motif_rankings_dm6_v10.RDS"))
+    }
+)
+# place last column first, as RcisTarget assumes that is the position of the motif names
+motif_rankings_dm6_v10@rankings <- dplyr::relocate(motif_rankings_dm6_v10@rankings, motifs)
+motif_rankings_dm6_v8@rankings <- dplyr::relocate(motif_rankings_dm6_v8@rankings, motifs)
+```
+
+```{r}
+motif_rankings_dm6_v10.RDS <- importRankings(
+  paste0(motifpath,'/dm6_v10_clust.genes_vs_motifs.rankings.feather'))
 ```
 
 
@@ -153,10 +201,10 @@ mR_10cls <- importRankings("resources/motifdbs/mc_v10_clust/dm6_v10_clust.genes_
 Now I need to see how many motifs are there per database:
 ```{r}
 motif.table <- data.frame(
-  motif_annot = c(NA, length(unique(mA__8new$motif)), length(unique(mA_10cls$motif)), length(unique(mA_10pub$motif))),
-  motif_ranks = c(nrow(mR__8old), nrow(mR__8new), nrow(mR_10cls), NA)
+  motif_annot = c(length(unique(motif_rankings_dm6_v8$motif)), length(unique(motif_rankings_dm6_v10$motif))),
+  motif_ranks = c(nrow(motif_annotations_dm6_v8), nrow(motif_annotations_dm6_v10))
 )
-rownames(motif.table) <- c('8old', '8new', '10cls', '10pub')
+rownames(motif.table) <- c('8new', '10cls')
 motif.table
 ```
 
@@ -165,8 +213,8 @@ So it seems that the combination with more possibilities is to match the v8 moti
 Let's see what we get with a simple comparison:
 
 ```{r}
-motrich_pure8 <- cisTarget(geneLists, mR__8new, motifAnnot = mA__8new)
-motrich_hybr8 <- cisTarget(geneLists, mR__8new, motifAnnot = mA_10cls)
+motrich_pure8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v8)
+motrich_hybr8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v10)
 ```
 
 
