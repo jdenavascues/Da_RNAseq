@@ -202,9 +202,9 @@ scOE_gse_kmet   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_m
 #### Layered heatmaps
 
 First to produce the dataframes for `ggplot2`, for _signaling_ pathways:
-```{r create_dfs_for_NESheatmap}
+```{r create_dfs_for_NESheatmap_sig}
 gse_list <- list(scOE_gse_ksig, dadaOE_gse_ksig, daOE_gse_ksig, daKD_gse_ksig)
-# `conditions` were defined further above
+conditions <- c('*scute*', '*da:da*', '*da*', '*da^RNAi^*')
 sets.as.factors <- unique(kegg.sig_tidy$description)
 layerhm.df <- gseCP_summarise(kegg.sig_gmx, gse_list, conditions, sets.as.factors, cluster=TRUE, nsig.out = TRUE)
 
@@ -215,7 +215,7 @@ p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
 ```
 
 Now _metabolic_ pathways:
-```{r create_dfs_for_NESheatmap}
+```{r create_dfs_for_NESheatmap_met}
 gse_list <- list(scOE_gse_kmet, dadaOE_gse_kmet, daOE_gse_kmet, daKD_gse_kmet)
 # `conditions` were defined further above
 sets.as.factors <- unique(kegg.met_tidy$description)
@@ -230,7 +230,7 @@ p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
 #### Pathway plots
 
 Obtain KEGG id for the desired pathways:
-```{r}
+```{r get_keggids}
 path.ids <- kegg.met_tidy %>%
   dplyr::select(term, description) %>%
   distinct()
@@ -250,7 +250,7 @@ fixed <- list(
 ```
 
 Plot pathway for Tryptophan metabolism:
-```{r}
+```{r example_pathview}
 (path.ids %>% filter(description == 'Tryptophan metabolism'))$term
 ```
 ```{r}

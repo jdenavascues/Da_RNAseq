@@ -157,12 +157,13 @@ tryCatch(
     message(e)
     # timeout is in seconds, and may depend on the connection:
     options(timeout = max(1500, getOption("timeout")))
-    temp <- tempfile()
-    download.file(rk_v8_url, temp, mode='wget')
-    motif_rankings_dm6_v8 <- importRankings(paste0(motifpath, '/dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather'))
-      
-      #temp)
-    unlink(temp)
+    # tried tempfile(), didn't work
+    destfile <- paste0(motifpath, 'motif_rankings_dm6_v8.feather')
+    download.file(url = rk_v8_url,
+                  destfile = destfile,
+                  mode='wget')
+    motif_rankings_dm6_v8 <- importRankings(destfile)
+    file.remove(destfile)
     saveRDS(motif_rankings_dm6_v8, paste0(motifpath, "/motif_rankings_dm6_v8.RDS"))
     }
 )
@@ -181,10 +182,13 @@ tryCatch(
     message('\n"motif_rankings_dm6_v10.RDS" is not available locally -- it will be downloaded and saved.\n\n')
     message(e)
     options(timeout = max(600, getOption("timeout"))) # number is in seconds, and may depend on the connection
-    temp <- tempfile()
-    download.file(rk_v10_url, temp, mode='wget')
-    motif_rankings_dm6_v10 <- importRankings(temp)
-    unlink(temp)
+    # tried tempfile(), didn't work
+    destfile <- paste0(motifpath, 'motif_rankings_dm6_v10.feather')
+    download.file(url = rk_v10_url,
+                  destfile = destfile,
+                  mode='wget')
+    motif_rankings_dm6_v10 <- importRankings(destfile)
+    file.remove(destfile)
     saveRDS(motif_rankings_dm6_v10, paste0(motifpath, "/motif_rankings_dm6_v10.RDS"))
     }
 )
@@ -213,10 +217,21 @@ motif.table
 So it seems that the combination with more possibilities is to match the v8 motif ranks with the v10 annotation -- the website recommends the opposite, but it is also true that this is in the context of the pySCENE pipeline, which is to build networks with scRNAseq data.
 
 Let's see what we get with a simple comparison:
-
 ```{r}
-motrich_pure8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v8)
-motrich_hybr8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v10)
+tryCatch(
+  { motrich_pure8 <- readRDS(paste0(getwd(), "/output", "/motrich_pure8.RDS")) },
+  error = function(e) {
+    motrich_pure8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v8)
+    saveRDS(motrich_pure8, paste0(getwd(), "/output", "/motrich_pure8.RDS"))
+    }
+)
+tryCatch(
+  { motrich_hybr8 <- readRDS(paste0(getwd(), "/output", "/motrich_hybr8.RDS")) },
+  error = function(e) {
+    motrich_hybr8 <- cisTarget(geneLists, motif_rankings_dm6_v8, motifAnnot = motif_annotations_dm6_v10)
+    saveRDS(motrich_hybr8, paste0(getwd(), "/output", "/motrich_hybr8.RDS"))
+    }
+)
 ```
 
 
@@ -356,15 +371,34 @@ geneg <- geneg %>%
 
 Now we can provide gene group symbols to the TFs from `RcisTarget`, which is more important than the identity of specific TFs.
 ```{r}
-motrich$TFclass <- lapply(
-  motrich$TFs, \(x) unique(unlist(lapply( x, \(y) filter(geneg, gene_symbol==y)$group_symbol)) )
+# for every list of TFs matched to a motif...
+motrich$TFclass <- lapply(motrich$TFs, \(x)
+  # ... get all the different TF classes corresponding to those TFs
+  unique( unlist( lapply( x, \(y) filter(geneg, gene_symbol==y)$group_symbol) ) )
   )
 ```
 
 As some motifs can be bound by different classes of TFs, we have to do:
 ```{r}
-motrich <- motrich %>% unnest(TFclass)
-length(unique(motrich$TFclass))
+# before, I simply unnested `TFclass` to replicate motifs bound by different TF classes
+motrich$TFclass <- lapply(motrich$TFs, \(x)
+  # ... get all the TF classes corresponding to those TFs, **allowing repetition**
+  unique( unlist( lapply( x, \(y) filter(geneg, gene_symbol==y)$group_symbol) ) )
+  )
+# however I think this is misleading (e.g. some GATA boxes are also bound by Da, but this makes no sense to highlight)
+# So now I will get them all:
+motrich$TFclassRep <- lapply(motrich$TFs, \(x)
+  # ... get all the TF classes corresponding to those TFs, **allowing repetition**
+  unlist( lapply( x, \(y) filter(geneg, gene_symbol==y)$group_symbol) )
+  )
+# So now, for every list of TFclasses matched (repeatedly) to a motif...
+motrich$TFmainClass <- lapply(motrich$TFclassRep, \(x)
+  # ... get the most abundant one
+  sort(table(x), decreasing=TRUE)[1] |> names()
+  )
+# remove NULLs caused by character(0) in $TFs
+motrich$TFmainClass[ sapply(motrich$TFmainClass, is.null) ] <- ''
+length(unique(motrich$TFmainClass))
 ```
 
 This is still too much for the plot. So I am going to simplify the list of different TF classes by hand:
@@ -413,9 +447,10 @@ names(class2name) <- (geneg %>%
   dplyr::select(group_symbol, group_name) %>%
   distinct() %>% dplyr::select(group_symbol))[[1]]
 # apply to motrich
+## first get the NULLs in TFmainClass
 motrich <- motrich %>%
-  mutate(TFLargeClass = recode(TFclass, !!!class2name)) %>%
-  mutate(TFLargeClass = recode(TFLargeClass, !!!name2largeclass))
+  mutate(TFLargeClass = recode(unlist(TFmainClass), !!!class2name)) %>%
+  mutate(TFLargeClass = recode(unlist(TFLargeClass), !!!name2largeclass))
 length(unique(motrich$TFLargeClass))
 ```
 
@@ -425,7 +460,10 @@ Somewhat better, but I would like something like ~6-7 colours at most. So I will
 ## 3 Plot the results
 
 
-I want to create a categorical (by experimental condition) dot plot that shows the Y position of the dot as the NES value, and the class of TF as colour. Maybe with jitter, maybe as beeswarm.
+### 3.1 Beeswarm plot (dotplot)
+
+
+I want to create a categorical (by experimental condition) 'beeswarm' dot plot that shows the Y position of the dot as the NES value, and the class of TF as colour.
 
 The minimal datasets are:
 ```{r}
@@ -449,9 +487,12 @@ To coarse-grain the TF classes:
 ```{r}
 top5up <- mots_up %>%
   dplyr::count(TFLargeClass) %>%
+  # remove '' and unclassified -- the latter have undue weight
+  filter(nchar(TFLargeClass)>1 & TFLargeClass!='unclassified') %>%
   arrange(n) %>%
   tail(5) %>%
   select(TFLargeClass) %>% unlist()
+
 mots_up <- mots_up %>%
   mutate(TFcla6 = if_else(TFLargeClass %in% top5up, TFLargeClass, 'Others'))
 mots_up$TFcla6 <- factor(mots_up$TFcla6, levels=c(rev(top5up), 'Others'))
@@ -460,6 +501,7 @@ mots_up$index <- unlist(indices)
 
 top5dn <- mots_dn %>%
   dplyr::count(TFLargeClass) %>%
+  filter(nchar(TFLargeClass)>1 & TFLargeClass!='unclassified') %>%
   arrange(n) %>%
   tail(5) %>%
   select(TFLargeClass) %>% unlist()
@@ -471,24 +513,8 @@ indices <- lapply(unique(mots_dn$geneSet), \(x) nrow(filter(mots_dn, geneSet==x)
 mots_dn$index <- unlist(indices)
 ```
 
-Now we need to identify specific TFs: _da_, members of the _ac/sc_ Complex (_ac_, _sc_, _ase_, _l(1)sc_), and maybe other essential ones (_klu_, _nub/pdm1_)
-```{r}
-note.tfs <- c('da', 'sc', 'ase')
-for (tf in note.tfs) {
-  mots_up <- mots_up %>%
-    mutate('{tf}' := if_else(str_detect(mots_up$TFs, tf), tf, '') )
-}
-```
-```{r}
-da <- if_else(mots_up$da=='da', 1, 0)
-da
-dapeaks <- erode(da, c(0,1,0)) + erode(da, c(0,1,1)) + erode(da, c(1,1,1))
-da[-c(which(diff(sign(diff(dapeaks)))==-2)+1)] <- 0
-da
-```
-
 To plot:
-```{r}
+```{r dotplot_NES_TFclass, fig.width=4, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
 p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) + 
   geom_dotplot(binaxis='y',
@@ -503,54 +529,202 @@ p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) +
                     breaks=levels(mots_up$TFcla6),
                     values=palette,
                     labels=levels(mots_up$TFcla6),
-                    guide=guide_legend(nrow = 2)) +
+                    guide=guide_legend(nrow = 1)) +
   xlab('TFs linked to enriched motifs') +
-  theme(axis.text.x = element_markdown(face='bold', size=10))
-
-
-
-p +
-  geom_text_repel()
+  theme(axis.text.x = element_markdown(face='bold', size=10),
+        aspect.ratio = 0.5,
+        legend.position = 'bottom')
+p
 ```
-```{r}
-# https://stackoverflow.com/questions/44991607
-bw <- 10
 
-p <- ggplot(mtcars, aes(hp)) +
-geom_dotplot(binwidth = bw, stackdir = 'center')
+Now we need to identify specific TFs: _da_, members of the _ac/sc_ Complex (_ac_, _sc_, _ase_, _l(1)sc_), and maybe other essential ones (_klu_, _nub/pdm1_)
+```{r mark_special_TFs, fig.width=5, fig.height=4}
+# using https://stackoverflow.com/questions/44991607
+tfs.regex <- c('da', 'sc', 'ase', 'E\\(spl\\)')
+tfs.var <- c('da', 'sc', 'ase', 'E(spl)')
+for (j in 1:length(tfs.regex)) {
+  mots_up <- mots_up %>%
+    mutate('{tfs.var[[j]]}' := if_else(
+      (str_detect(as.character(mots_up$TFs), tfs.regex[[j]]) & TFcla6=='bHLH'),
+      tfs.var[[j]], NA) )
+}
+mots_up <- mots_up %>%
+  unite('tf.labs', all_of(tfs.var), sep = ', ', na.rm = TRUE, remove=FALSE)
 
+# to get the lines of ggrepel text where we want:
 built <- ggplot_build(p)
 point.pos <- built$data[[1]]
-
-# Order rows of mtcars by hp
-idx <- order(mtcars$hp)
-mtcars2 <- mtcars[idx,]
-
-# Get the dimensions of the target device in pixels
 size <- dev.size(units = 'px')
-# Get the range of x and y domain values
 extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
-mtcars2$ytext <- (size[1] / size[2]) * (extent[2] / extent[1]) * point.pos$stackpos * bw
-mtcars2$xtext <- point.pos$x
+bw <- point.pos$binwidth[[1]]
+# por la cuenta de la vieja, al final
+xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1] / extent[2]) * (38/64)
+ytext <- point.pos$y
 
-pggplot(mtcars2, aes(hp)) +
-geom_dotplot(binwidth = bw, stackdir = 'center') +
-geom_text_repel(
-    aes(xtext, ytext, label = rownames(mtcars2)),
-    box.padding = unit(.5 * size[1] * bw / extent[1], 'points'),
-    color = 'red'
-)
-
+p +
+  scale_colour_manual(name='',
+                    breaks=levels(mots_up$TFcla6),
+                    values=palette,
+                    labels=levels(mots_up$TFcla6),
+                    guide=guide_legend(nrow = 1)) +
+  geom_text_repel(
+    # reindex - point.pos is organised by X values, then by FILL colour
+    # which equates to ordering tf.lab as X, then TFclass, then NES
+    aes(label = arrange(mots_up, geneSet, TFcla6, NES)$da,
+        x = xtext, y = ytext,
+        colour = arrange(mots_up, geneSet, TFcla6, NES)$TFcla6),
+    size=3,
+    # general
+    max.overlaps = Inf,
+    # position
+    direction = 'both',
+    nudge_x = -0.25,
+    nudge_y = 1.5,
+    # segment
+    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
+    min.segment.length = 0,
+    segment.color = 'gray30',
+    segment.alpha = 0.75,
+    segment.size = 0.2) +
+  geom_text_repel(
+    # reindex - point.pos is organised by X values, then by FILL colour
+    # which equates to ordering tf.lab as X, then TFclass, then NES
+    aes(label = arrange(mots_up, geneSet, TFcla6, NES)$sc,
+        x = xtext, y = ytext,
+        colour = arrange(mots_up, geneSet, TFcla6, NES)$TFcla6),
+    size=3,
+    # general
+    max.overlaps = Inf,
+    # position
+    direction = 'both',
+    nudge_x = 0.4,
+    nudge_y = 0,
+    # segment
+    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
+    min.segment.length = 0,
+    segment.color = 'gray30',
+    segment.alpha = 0.75,
+    segment.size = 0.2) +
+  guides(fill = guide_legend(override.aes = aes(color = NA))) +
+  ylim(2.5,10)
 ```
 
 ```{r}
+ggsave(paste0(figdir, '/motifs_up_TFclass.pdf'))
+```
+
+Now for the downregulataed genes:
+
+```{r dotplot_NES_TFclass_down, fig.width=4, fig.height=4}
+palette <- c( brewer.pal(12, 'Paired')[c(8, 6, 2, 4, 10)], '#CCCCCC' )
+q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) + 
+  geom_dotplot(binaxis='y',
+               stackdir='center',
+               stackgroups = TRUE,
+               method='histodot',
+               binwidth=0.1,
+               dotsize=1,
+               alpha=1,
+               stroke=0) +
+  scale_fill_manual(name='',
+                    breaks=levels(mots_dn$TFcla6),
+                    values=palette,
+                    labels=levels(mots_dn$TFcla6),
+                    guide=guide_legend(nrow = 1)) +
+  xlab('TFs linked to enriched motifs') +
+  theme(axis.text.x = element_markdown(face='bold', size=10),
+        aspect.ratio = 0.5,
+        legend.position = 'bottom')
+
+tfs.regex <- c('da', 'sc', 'ase', 'E\\(spl\\)')
+tfs.var <- c('da', 'sc', 'ase', 'E(spl)')
+for (j in 1:length(tfs.regex)) {
+  mots_dn <- mots_dn %>%
+    mutate('{tfs.var[[j]]}' := if_else(
+      (str_detect(as.character(mots_dn$TFs), tfs.regex[[j]]) & TFcla6=='bHLH'),
+      tfs.var[[j]], NA) )
+}
+mots_dn <- mots_dn %>%
+  unite('tf.labs', all_of(tfs.var), sep = ', ', na.rm = TRUE, remove=FALSE)
+
+# to get the lines of ggrepel text where we want:
+built <- ggplot_build(q)
+point.pos <- built$data[[1]]
+size <- dev.size(units = 'px')
+extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
+bw <- point.pos$binwidth[[1]]
+# por la cuenta de la vieja, al final
+xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1] / extent[2]) * (38/64)
+ytext <- point.pos$y
+
+q +
+  scale_colour_manual(name='',
+                    breaks=levels(mots_dn$TFcla6),
+                    values=palette,
+                    labels=levels(mots_dn$TFcla6),
+                    guide=guide_legend(nrow = 1)) +
+  geom_text_repel(
+    # reindex - point.pos is organised by X values, then by FILL colour
+    # which equates to ordering tf.lab as X, then TFclass, then NES
+    aes(label = arrange(mots_dn, geneSet, TFcla6, NES)$da,
+        x = xtext, y = ytext,
+        colour = arrange(mots_dn, geneSet, TFcla6, NES)$TFcla6),
+    size=2,
+    # general
+    max.overlaps = Inf,
+    # position
+    direction = 'both',
+    nudge_x = -0.25,
+    nudge_y = 0,
+    force_pull = 0.5,
+    # segment
+    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
+    min.segment.length = 0,
+    segment.color = 'gray30',
+    segment.alpha = 0.75,
+    segment.size = 0.2) +
+  geom_text_repel(
+    aes(label = arrange(mots_dn, geneSet, TFcla6, NES)$`E(spl)`,
+        x = xtext, y = ytext,
+        colour = arrange(mots_dn, geneSet, TFcla6, NES)$TFcla6),
+    size=2,
+    # general
+    max.overlaps = Inf,
+    # position
+    direction = 'both',
+    nudge_x = -0.25,
+    nudge_y = 3,
+    xlim = c(0.4, 3.5),
+    ylim = c(6,10),
+    force = 0.8,
+    box.padding = 0.2,
+    force_pull = 0,
+    # segment
+    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
+    min.segment.length = 0,
+    segment.color = 'gray30',
+    segment.alpha = 0.75,
+    segment.size = 0.2) +
+  guides(fill = guide_legend(override.aes = aes(color = NA))) +
+  ylim(2.5,10)
+```
+
+```{r}
+ggsave(paste0(figdir, '/motifs_down_TFclass.pdf'))
+```
 
 
-p <- ggplot(mots_up, aes(x=index, y=NES, fill=TFcla6, colour=TFcla6)) +
+### 3.1 Rank lollipop plot (experiment)
+
+
+The beeswarm plot loses a bit the idea of the rank, so I try the lollipop plot, which will show as a continuously increasing function with the colour indicating the type of TF.
+
+```{r}
+r <- ggplot(mots_up, aes(x=index, y=NES, fill=TFcla6, colour=TFcla6)) +
   geom_segment(aes(x = index, xend = index,
                    y = 0, yend = NES), linewidth=0.1) +
   geom_point(size = 1, shape=21, stroke=0)
-p +
+r +
   scale_colour_manual(name='',
                       breaks=TFcla6,
                       values=palette,
@@ -570,39 +744,5 @@ p +
         axis.ticks.x = element_blank(),
         legend.position = 'bottom'
         )
-
 ```
-
-
-
-```{r}
-paste(dplyr::count(mots_up, TFLargeClass))
-```
-
-To plot:
-```{r}
-p <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFLargeClass, colour=NULL)) + 
-  geom_dotplot(binaxis='y',
-               stackdir='center',
-               method='histodot',
-               position=position_jitter(width=0.1, height=0.1),
-               binwidth=0.1,
-               dotsize=1.5,
-               alpha=0.5,
-               stroke=0) +
-  theme( axis.text.x = element_markdown() )
-p
-```
-
-```{r}
-paste(dplyr::count(mots_dn, TFLargeClass))
-```
-
-TO DO:
-make a group of "others" (classes with less than 10)
-beautify
-create tables with logos
-finish and write up.
-
-
 

@@ -181,18 +181,19 @@ Prepare data to plot heatmaps with NES and padj with the function below, `gseCP_
 You run this separately for the NES or adjusted _p_ values for "historical" reasons (I didn't think it through, and had to restore to new syntax that now I don't want to throw away :).
 
 Now we can apply `gseCP_summarise` to the GSEA results from all conditions:
-```{r create_dfs_for_NESheatmap}
+```{r create_dfs_for_NESheatmap_dutta}
 gse_list <- list(scOE_gse_dutta, dadaOE_gse_dutta, daOE_gse_dutta, daKD_gse_dutta)
 conditions <- c('*scute*', '*da:da*', '*da*', '*da^RNAi^*')
 # gse_list and conditions must have the same order
 sets.as.factors <- c("ISC-only", "Progenitor", "EB-only", "EE-only",
                      "Absorptive", "EC-only", "Differentiation")
-NES.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'NES')
-padj.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+layerhm.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors,
+                          cluster=TRUE, nsig.out = FALSE)
 
 subt <- "for cell-type specific gene sets (Dutta et al., 2015)"
-p <- layer.heatmap(NES.df, padj.df, subt)
-p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+p <- layer.heatmap(layerhm.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 0))
 ```
 
 
@@ -241,16 +242,17 @@ scOE_gse_zeng <- do.call(
 #### Layered heatmap
 
 First to produce the dataframes for `ggplot2`:
-```{r create_dfs_for_NESheatmap}
+```{r create_dfs_for_NESheatmap_zeng}
 gse_list <- list(scOE_gse_zeng, dadaOE_gse_zeng, daOE_gse_zeng, daKD_gse_zeng)
 # `conditions` were defined further above
 sets.as.factors <- c("Excess ISC/EB", "Over-proliferation", "ISC to EE", "ISC to EC", "Large nucleus", "ISC death")
-NES.df <- gseCP_summarise(zeng_gmx, gse_list, conditions, sets.as.factors, 'NES')
-padj.df <- gseCP_summarise(zeng_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+layerhm.df <- gseCP_summarise(zeng_gmx, gse_list, conditions, sets.as.factors,
+                              cluster=TRUE, nsig.out = FALSE)
 
 subt <- "for RNAi-induced phenotypic class gene sets (Zeng et al., 2015)"
-p <- layer.heatmap(NES.df, padj.df, subt)
-p + geom_hline(aes(yintercept=3.5), linewidth = 0.5)
+p <- layer.heatmap(layerhm.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 0))
 ```
 
 #### GSEA plots
@@ -324,11 +326,11 @@ glad_dataset <- glad_dataset %>%
                 \(x) gsub(x, pattern="(^[[:lower:]])", replacement="\\U\\1", perl=TRUE))) %>%
   # substitute empty strings for NAs
   mutate_at(c('term', 'Sub.group', 'Sub.sub.group'), ~na_if(., ''))
-View(glad_dataset %>% select(term, Sub.group, Sub.sub.group) %>% distinct() %>% filter(term=='TF/DNA-binding'))
+View(glad_dataset %>% dplyr::select(term, Sub.group, Sub.sub.group) %>% distinct() %>% filter(term=='TF/DNA-binding'))
 ```
 
 Establish the gene sets in tidy dataframes (subdivisions are in lists):
-```{r}
+```{r tidy_glad}
 # major groups
 glad_gmx <- glad_dataset %>%
   dplyr::select(term, FBgn) %>%
@@ -359,28 +361,28 @@ GSEAparams <- list(
 ```
 
 Now we can simply define the rank file and apply GSEA for each condition:
-```{r, message=FALSE}
+```{r rank_daRNAi, message=FALSE}
 # da knockdown
 rank <- make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID')
 daKD_gse_glad <- do.call(
   GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
 ```
-```{r, message=FALSE}
+```{r rank_da, message=FALSE}
 # da overexpression
 rank <- make_degrank(DaOE_deg, mode='log2fc', key='ensemblGeneID')
 daOE_gse_glad <- do.call(
   GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
 ```
-```{r, message=FALSE}
+```{r rank_dada, message=FALSE}
 # da:da overexpression
 rank <- make_degrank(DaDaOE_deg, mode='log2fc', key='ensemblGeneID')
 dadaOE_gse_glad <- do.call(
   GSEA, c(list(geneList=rank, nPermSimple = 1000, TERM2GENE = glad_gmx), GSEAparams)
   )
 ```
-```{r, message=FALSE}
+```{r rank_sc, message=FALSE}
 # scute overexpression
 # rank <- make_degrank(ScOE_deg, mode='log2fc', key='ensemblGeneID')
 # scOE_gse_glad <- do.call(
@@ -395,15 +397,15 @@ scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
 
 
 First to produce the dataframes for `ggplot2`:
-```{r create_dfs_for_NESheatmap, fig.width=16}
+```{r create_dfs_for_NESheatmap_GLAD, fig.width=16}
 gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
 # `conditions` were defined further above
 sets.as.factors <- unique(glad_gmx$term)
-NES.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'NES', cluster = TRUE)
-padj.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors, 'p.adjust')
+layerhm.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors,
+                              cluster = TRUE, nsig.out = TRUE)
 
 subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
-p <- layer.heatmap(NES.df, padj.df, subt)
+p <- layer.heatmap(layerhm.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
   theme(plot.margin = margin(r = 100))
 ```
@@ -423,7 +425,7 @@ scOE_gse_gladsub['Human Disease'] <- NULL
 
 Now it is a matter of looping over the names of the GLAD terms with sub/sub-groups, and gather the NES/p.adj data for each condition and each term subdivision.
 For the `'Sub.group'` subdivision:
-```{r combine_gsea}
+```{r combine_gsea_sub}
 gladsub_gsealists <- list(daKD_gse_gladsub,
                           daOE_gse_gladsub,
                           dadaOE_gse_gladsub,
@@ -432,7 +434,7 @@ gladsub_gsealists <- list(daKD_gse_gladsub,
 # 'loop' over the Sub.groups in `glad_sub_gmx`
 # collect the corresponding GSEA results for each of the conditions
 # gather the NES
-NES_gladsub_list <- lapply(
+lhm_gladsub_list <- lapply(
   1:length(glad_sub_gmx),
   \(x) gseCP_summarise(glad_sub_gmx[[x]],
                        # this is needed instead of the simpler `lapply(gladsub_gsealists, '[[', x)`
@@ -442,63 +444,55 @@ NES_gladsub_list <- lapply(
                        lapply(gladsub_gsealists, '[[', names(glad_sub_gmx)[[x]]),
                        conditions,
                        unique(glad_sub_gmx[[x]]$term),
-                       'NES',
-                       cluster = TRUE)
-  )
-                       
-padj_gladsub_list <- lapply(
-  1:length(glad_sub_gmx),
-  \(x) gseCP_summarise(glad_sub_gmx[[x]],
-                       lapply(gladsub_gsealists, '[[', names(glad_sub_gmx)[[x]]),
-                       conditions,
-                       unique(glad_sub_gmx[[x]]$term),
-                       'p.adjust')
+                       cluster = TRUE,
+                       nsig.out = TRUE)
   )
 
-names(NES_gladsub_list) <- names(glad_sub_gmx)
-names(padj_gladsub_list) <- names(glad_sub_gmx)
+names(lhm_gladsub_list) <- names(glad_sub_gmx)
 ```
 
 And plotting:
-```{r}
+```{r make_subsets_glad_hms}
 subt <- paste0("for Gene List Annotation for Drosophila gene subsets (Hu et al., 2015)",
                "\n(subsets of ", names(glad_sub_gmx), ")")
 p_list <- lapply(
   1:length(glad_sub_gmx),
-  \(x) layer.heatmap(NES_gladsub_list[[x]], padj_gladsub_list[[x]], subt[[x]]) +
+  \(x) if(nrow(lhm_gladsub_list[[x]])>0) {
+    layer.heatmap(lhm_gladsub_list[[x]], subt[[x]]) +
     geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
     theme(plot.margin = margin(r = 50))
+    }
 )
 ```
 
 And to visualise:
-```{r}
+```{r subsets_glad_hm_2}
 p_list[[2]]
 ```
 
-```{r}
+```{r subsets_glad_hm_1}
 p_list[[1]]
 ```
 
-```{r}
+```{r subsets_glad_hm_3}
 p_list[[3]]
 ```
 
 
 
-```{r}
+```{r subsets_glad_hm_4}
 p_list[[4]]
 ```
 
-```{r}
+```{r subsets_glad_hm_5}
  p_list[[5]]
 ```
 
-```{r}
+```{r subsets_glad_hm_6}
 p_list[[6]]
 ```
 
-```{r}
+```{r subsets_glad_hm_7}
 p_list[[7]]
 ```
 
@@ -513,61 +507,53 @@ scOE_gse_gladsub2   <- subglad_gsea(ScOE_deg, glad_sub2_gmx)
 ```
 
 
-```{r}
+```{r combine_gsea_subsub}
 gladsub2_gsealists <- list(daKD_gse_gladsub2,
                            daOE_gse_gladsub2,
                            dadaOE_gse_gladsub2,
                            scOE_gse_gladsub2)
 
-NES_gladsub2_list <- lapply(
+lhm_gladsub2_list <- lapply(
   1:length(glad_sub2_gmx),
   \(x) gseCP_summarise(glad_sub2_gmx[[x]],
                        lapply(gladsub2_gsealists, '[[', names(glad_sub2_gmx)[[x]]),
                        conditions,
                        unique(glad_sub2_gmx[[x]]$term),
-                       'NES',
-                       cluster = TRUE)
-  )
-                       
-padj_gladsub2_list <- lapply(
-  1:length(glad_sub2_gmx),
-  \(x) gseCP_summarise(glad_sub2_gmx[[x]],
-                       lapply(gladsub2_gsealists, '[[', names(glad_sub2_gmx)[[x]]),
-                       conditions,
-                       unique(glad_sub2_gmx[[x]]$term),
-                       'p.adjust')
+                       cluster = TRUE,
+                       nsig.out = TRUE)
   )
 
-names(NES_gladsub2_list) <- names(glad_sub2_gmx)
-names(padj_gladsub2_list) <- names(glad_sub2_gmx)
+names(lhm_gladsub2_list) <- names(glad_sub2_gmx)
 ```
 
 And plotting:
-```{r}
+```{r make_subsubs_glad_hms}
 subt <- paste0("for Gene List Annotation for Drosophila gene sub-subsets (Hu et al., 2015)",
                "\n(subsets of ", names(glad_sub_gmx), ")")
 names(subt) <- names(glad_sub_gmx)
 p2_list <- lapply(
   names(glad_sub2_gmx),
-  \(x) layer.heatmap(NES_gladsub2_list[[x]], padj_gladsub2_list[[x]], subt[[x]]) +
+  \(x) if (nrow(lhm_gladsub2_list[[x]])>0) {
+    layer.heatmap(lhm_gladsub2_list[[x]], subt[[x]]) +
     geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
     theme(plot.margin = margin(r = 50))
+    }
 )
 ```
 
-```{r}
+```{r subsubs_glad_hm_1}
 p2_list[[1]]
 ```
 
-```{r}
+```{r subsubs_glad_hm_2}
 p2_list[[2]]
 ```
 
-```{r, fig.width=25}
+```{r subsubs_glad_hm_3}
 p2_list[[3]]
 ```
 
-```{r fig.width=20}
+```{r subsubs_glad_hm_4}
 p2_list[[4]]
 ```
 
@@ -617,13 +603,13 @@ scOE_gse_gladsub2_gtr <- list(
 names(scOE_gse_gladsub2_gtr) <- names(scOE_gse_gladsub2)
 ```
 
-```{r}
+```{r genekitr_custom_subsub_daRNAi}
 plotGSEA(daKD_gse_gladsub2_gtr[[1]],
          plot_type = "classic",
          show_pathway = daKD_gse_gladsub2_gtr[[1]]$gsea_df$ID,
          show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
 ```
-```{r}
+```{r genekitr_custom_subsub_sc}
 plotGSEA(scOE_gse_gladsub2_gtr[[1]],
          plot_type = "classic",
          show_pathway = scOE_gse_gladsub2_gtr[[1]]$gsea_df$ID,
@@ -632,7 +618,7 @@ plotGSEA(scOE_gse_gladsub2_gtr[[1]],
 
 ##### For sub-terms
 
-```{r genekitr_customisation_usage1}
+```{r genekitr_customisation_usage2}
 for (x in 1:length(daKD_gse_gladsub)) daKD_gse_gladsub[[x]]@organism <- 'dm'
 for (x in 1:length(daOE_gse_gladsub)) daOE_gse_gladsub[[x]]@organism <- 'dm'
 for (x in 1:length(dadaOE_gse_gladsub)) dadaOE_gse_gladsub[[x]]@organism <- 'dm'
@@ -683,13 +669,13 @@ scOE_gse_gladsub_gtr <- list(
 names(scOE_gse_gladsub_gtr) <- names(scOE_gse_gladsub)
 ```
 
-```{r}
+```{r genekitr_custom_sub_daRNAi}
 plotGSEA(daKD_gse_gladsub_gtr[[1]],
          plot_type = "classic",
          show_pathway = daKD_gse_gladsub_gtr[[1]]$gsea_df$ID,
          show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
 ```
-```{r}
+```{r genekitr_custom_sub_sc}
 plotGSEA(scOE_gse_gladsub_gtr[[1]],
          plot_type = "classic",
          show_pathway = scOE_gse_gladsub_gtr[[1]]$gsea_df$ID,
@@ -698,7 +684,7 @@ plotGSEA(scOE_gse_gladsub_gtr[[1]],
 
 ##### For main terms
 
-```{r genekitr_customisation_usage1}
+```{r genekitr_customisation_usage3}
 daKD_gse_glad@organism <- 'dm'
 daOE_gse_glad@organism <- 'dm'
 dadaOE_gse_glad@organism <- 'dm'
@@ -710,13 +696,13 @@ dadaOE_gse_glad_gtr <- importCP(dadaOE_gse_glad, type = 'gsea')
 scOE_gse_glad_gtr <- importCP(scOE_gse_glad, type = 'gsea')
 ```
 
-```{r}
+```{r genekitr_custom_main_daRNAi}
 plotGSEA(daKD_gse_glad_gtr,
          plot_type = "classic",
          show_pathway = daKD_gse_glad_gtr$gsea_df$ID[c(2,3,6)],
          show_gene = c('da', 'sc', 'emc', 'pros', 'esg', 'Dl'))
 ```
-```{r}
+```{r genekitr_custom_main_sc}
 plotGSEA(scOE_gse_glad_gtr,
          plot_type = "classic",
          show_pathway = scOE_gse_glad_gtr$gsea_df$ID[c(2,3,6)],

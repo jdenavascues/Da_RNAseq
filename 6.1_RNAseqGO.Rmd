@@ -410,7 +410,7 @@ dadaOE_GSEgo <- gseGO(geneList=dadaOE_rank,
                     verbose=F)
 ```
 
-```{r GSEA_da_overexpression_plots}
+```{r GSEA_dada_overexpression_plots}
 # get the logP values instead of padj 
 dadaOE_GSEgo_log <- dadaOE_GSEgo
 dadaOE_GSEgo_log@result$p.adjust <- -log10(dadaOE_GSEgo_log@result$p.adjust) # use @slot and $column to assign
@@ -446,7 +446,7 @@ suppressWarnings(print(gsep))
 ```
 
 For *scute* overexpression:
-```{r GSEA_dada_overexpression}
+```{r GSEA_sc_overexpression}
 # using `clusterProfiler` and `enrichplot`
 # select reg set
 scOE_rank <- make_degrank(ScOE_deg, mode='log2fc')
@@ -462,7 +462,7 @@ scOE_GSEgo <- gseGO(geneList=scOE_rank,
                     verbose=F)
 ```
 
-```{r GSEA_da_overexpression_plots}
+```{r GSEA_sc_overexpression_plots}
 # get the logP values instead of padj 
 scOE_GSEgo_log <- scOE_GSEgo
 scOE_GSEgo_log@result$p.adjust <- -log10(scOE_GSEgo_log@result$p.adjust) # use @slot and $column to assign
