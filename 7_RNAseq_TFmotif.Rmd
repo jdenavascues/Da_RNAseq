@@ -28,9 +28,9 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(
   # data manip.
-  dplyr, stringr, RcisTarget, data.table, DT,
+  dplyr, stringr, tidyr, RcisTarget, data.table, DT,
   # plotting
-  ggtheme, ggtext, ggrepel,
+  ggtheme, ggtext, ggrepel, RColorBrewer, cetcolor, hrbrthemes, #?
 # convenience
   here)
 
@@ -137,8 +137,11 @@ an_v10_url <- paste0('https://resources.aertslab.org/cistarget/motif2tf/',
 motifpath <- paste0(getwd(), "/resources/motifdbs")
 if (!dir.exists( motifpath )) dir.create(motifpath)
 # read (or download, if the first time) the rankings and annotations 
+```
+
+```{r}
 tryCatch(
-  { readRDS(paste0(motifpath, "/motif_annotations_dm6_v8.RDS")) },
+  { motif_annotations_dm6_v8 <- readRDS(paste0(motifpath, "/motif_annotations_dm6_v8.RDS")) },
   error = function(e) {
     message(e)
     message('\n"motif_annotations_dm6_v8" is not available locally -- it will be downloaded and saved.')
@@ -147,20 +150,24 @@ tryCatch(
     }
 )
 tryCatch(
-  { readRDS(paste0(motifpath, "/motif_rankings_dm6_v8.RDS")) },
+  { options(timeout = max(600, getOption("timeout")))
+    motif_rankings_dm6_v8 <- readRDS(paste0(motifpath, "/motif_rankings_dm6_v8.RDS")) },
   error = function(e) {
-    message('\n"motif_rankings_dm6_v8.RDS" is not available locally -- it will be downloaded and saved.\n\n')
+    message('\n"motif_rankings_dm6_v8" is not available locally -- it will be downloaded and saved.\n\n')
     message(e)
-    options(timeout = max(1500, getOption("timeout"))) # number is in seconds, and may depend on the connection
+    # timeout is in seconds, and may depend on the connection:
+    options(timeout = max(1500, getOption("timeout")))
     temp <- tempfile()
     download.file(rk_v8_url, temp, mode='wget')
-    motif_rankings_dm6_v8 <- importRankings(temp)
-    #unlink(temp)
+    motif_rankings_dm6_v8 <- importRankings(paste0(motifpath, '/dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather'))
+      
+      #temp)
+    unlink(temp)
     saveRDS(motif_rankings_dm6_v8, paste0(motifpath, "/motif_rankings_dm6_v8.RDS"))
     }
 )
 tryCatch(
-  { readRDS(paste0(motifpath, "/motif_annotations_dm6_v10.RDS")) },
+  { motif_annotations_dm6_v10 <- readRDS(paste0(motifpath, "/motif_annotations_dm6_v10.RDS")) },
   error = function(e) {
     message(e)
     message('\n"motif_annotations_dm6_v10" is not available locally -- it will be downloaded and saved.')
@@ -169,7 +176,7 @@ tryCatch(
     }
 )
 tryCatch(
-  { readRDS(paste0(motifpath, "/motif_rankings_dm6_v10.RDS")) },
+  { motif_rankings_dm6_v10 <- readRDS(paste0(motifpath, "/motif_rankings_dm6_v10.RDS")) },
   error = function(e) {
     message('\n"motif_rankings_dm6_v10.RDS" is not available locally -- it will be downloaded and saved.\n\n')
     message(e)
@@ -186,11 +193,6 @@ motif_rankings_dm6_v10@rankings <- dplyr::relocate(motif_rankings_dm6_v10@rankin
 motif_rankings_dm6_v8@rankings <- dplyr::relocate(motif_rankings_dm6_v8@rankings, motifs)
 ```
 
-```{r}
-motif_rankings_dm6_v10.RDS <- importRankings(
-  paste0(motifpath,'/dm6_v10_clust.genes_vs_motifs.rankings.feather'))
-```
-
 
 ## 2 Perform motif enrichment with `RcisTarget`
 
@@ -201,8 +203,8 @@ motif_rankings_dm6_v10.RDS <- importRankings(
 Now I need to see how many motifs are there per database:
 ```{r}
 motif.table <- data.frame(
-  motif_annot = c(length(unique(motif_rankings_dm6_v8$motif)), length(unique(motif_rankings_dm6_v10$motif))),
-  motif_ranks = c(nrow(motif_annotations_dm6_v8), nrow(motif_annotations_dm6_v10))
+  motif_annot = c(length(unique(motif_annotations_dm6_v8$motif)), length(unique(motif_annotations_dm6_v10$motif))),
+  motif_ranks = c(nrow(motif_rankings_dm6_v8), nrow(motif_rankings_dm6_v10))
 )
 rownames(motif.table) <- c('8new', '10cls')
 motif.table
@@ -417,7 +419,7 @@ motrich <- motrich %>%
 length(unique(motrich$TFLargeClass))
 ```
 
-Somewhat better... Let's see:
+Somewhat better, but I would like something like ~6-7 colours at most. So I will merge the groups with less than ~10 hits into one after the next step.
 
 
 ## 3 Plot the results
@@ -429,34 +431,149 @@ The minimal datasets are:
 ```{r}
 # genes up
 mots_up <- motrich %>%
-  dplyr::select(c(geneSet, NES, TFLargeClass)) %>%
+  dplyr::select(c(TFs, geneSet, NES, TFLargeClass)) %>%
   filter(str_detect(geneSet, 'up'))
 mots_up$geneSet <- factor(mots_up$geneSet,
                           levels=c("daRNAi_up", "daOE_up", "dadaOE_up", "scOE_up"),
                           labels=c("*da^RNAi^*", "*da*", "*da:da*", "*scute*"))
 # genes down
 mots_dn <- motrich %>%
-  dplyr::select(c(geneSet, NES, TFLargeClass)) %>%
+  dplyr::select(c(TFs, geneSet, NES, TFLargeClass)) %>%
   filter(str_detect(geneSet, 'dn'))
 mots_dn$geneSet <- factor(mots_dn$geneSet,
                           levels=c("daRNAi_dn", "daOE_dn", "dadaOE_dn", "scOE_dn"),
                           labels=c("*da^RNAi^*", "*da*", "*da:da*", "*scute*"))
 ```
 
+To coarse-grain the TF classes:
+```{r}
+top5up <- mots_up %>%
+  dplyr::count(TFLargeClass) %>%
+  arrange(n) %>%
+  tail(5) %>%
+  select(TFLargeClass) %>% unlist()
+mots_up <- mots_up %>%
+  mutate(TFcla6 = if_else(TFLargeClass %in% top5up, TFLargeClass, 'Others'))
+mots_up$TFcla6 <- factor(mots_up$TFcla6, levels=c(rev(top5up), 'Others'))
+indices <- lapply(unique(mots_up$geneSet), \(x) nrow(filter(mots_up, geneSet==x)):1 )
+mots_up$index <- unlist(indices)
+
+top5dn <- mots_dn %>%
+  dplyr::count(TFLargeClass) %>%
+  arrange(n) %>%
+  tail(5) %>%
+  select(TFLargeClass) %>% unlist()
+
+mots_dn <- mots_dn %>%
+  mutate(TFcla6 = if_else(TFLargeClass %in% top5dn, TFLargeClass, 'Others'))
+mots_dn$TFcla6 <- factor(mots_dn$TFcla6, levels=c(rev(top5dn), 'Others'))
+indices <- lapply(unique(mots_dn$geneSet), \(x) nrow(filter(mots_dn, geneSet==x)):1 )
+mots_dn$index <- unlist(indices)
+```
+
+Now we need to identify specific TFs: _da_, members of the _ac/sc_ Complex (_ac_, _sc_, _ase_, _l(1)sc_), and maybe other essential ones (_klu_, _nub/pdm1_)
+```{r}
+note.tfs <- c('da', 'sc', 'ase')
+for (tf in note.tfs) {
+  mots_up <- mots_up %>%
+    mutate('{tf}' := if_else(str_detect(mots_up$TFs, tf), tf, '') )
+}
+```
+```{r}
+da <- if_else(mots_up$da=='da', 1, 0)
+da
+dapeaks <- erode(da, c(0,1,0)) + erode(da, c(0,1,1)) + erode(da, c(1,1,1))
+da[-c(which(diff(sign(diff(dapeaks)))==-2)+1)] <- 0
+da
+```
+
 To plot:
 ```{r}
-p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFLargeClass, colour=NULL)) + 
+palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
+p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) + 
   geom_dotplot(binaxis='y',
                stackdir='center',
+               stackgroups = TRUE,
                method='histodot',
-               position=position_jitter(width=0.1, height=0.1),
                binwidth=0.1,
-               dotsize=1.5,
-               alpha=0.5,
+               dotsize=1,
+               alpha=1,
                stroke=0) +
-  theme(axis.text.x = element_markdown())
-p
+  scale_fill_manual(name='',
+                    breaks=levels(mots_up$TFcla6),
+                    values=palette,
+                    labels=levels(mots_up$TFcla6),
+                    guide=guide_legend(nrow = 2)) +
+  xlab('TFs linked to enriched motifs') +
+  theme(axis.text.x = element_markdown(face='bold', size=10))
+
+
+
+p +
+  geom_text_repel()
 ```
+```{r}
+# https://stackoverflow.com/questions/44991607
+bw <- 10
+
+p <- ggplot(mtcars, aes(hp)) +
+geom_dotplot(binwidth = bw, stackdir = 'center')
+
+built <- ggplot_build(p)
+point.pos <- built$data[[1]]
+
+# Order rows of mtcars by hp
+idx <- order(mtcars$hp)
+mtcars2 <- mtcars[idx,]
+
+# Get the dimensions of the target device in pixels
+size <- dev.size(units = 'px')
+# Get the range of x and y domain values
+extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
+mtcars2$ytext <- (size[1] / size[2]) * (extent[2] / extent[1]) * point.pos$stackpos * bw
+mtcars2$xtext <- point.pos$x
+
+pggplot(mtcars2, aes(hp)) +
+geom_dotplot(binwidth = bw, stackdir = 'center') +
+geom_text_repel(
+    aes(xtext, ytext, label = rownames(mtcars2)),
+    box.padding = unit(.5 * size[1] * bw / extent[1], 'points'),
+    color = 'red'
+)
+
+```
+
+```{r}
+
+
+p <- ggplot(mots_up, aes(x=index, y=NES, fill=TFcla6, colour=TFcla6)) +
+  geom_segment(aes(x = index, xend = index,
+                   y = 0, yend = NES), linewidth=0.1) +
+  geom_point(size = 1, shape=21, stroke=0)
+p +
+  scale_colour_manual(name='',
+                      breaks=TFcla6,
+                      values=palette,
+                      labels=exgrid_red$conditions,
+                      guide=guide_legend(nrow = r)) +
+  scale_fill_manual(name='',
+                    breaks=levels(g$data.survtable$strata),
+                    values=palette,
+                    labels=exgrid_red$conditions,
+                    guide=guide_legend(nrow = r)) +
+  facet_grid(. ~ geneSet,  scales = "free", space = 'free') +
+  xlab("TF class for enriched motif") +
+  theme(strip.text.x = element_markdown(face='bold', colour='black', size=10),
+        strip.background.x = element_rect(fill=cet_pal(9, name='cbd1')[[4]],
+                                          colour='white'),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = 'bottom'
+        )
+
+```
+
+
 
 ```{r}
 paste(dplyr::count(mots_up, TFLargeClass))
@@ -473,7 +590,7 @@ p <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFLargeClass, colour=NULL)) +
                dotsize=1.5,
                alpha=0.5,
                stroke=0) +
-  theme(axis.text.x = element_markdown())
+  theme( axis.text.x = element_markdown() )
 p
 ```
 
