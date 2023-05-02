@@ -516,7 +516,7 @@ mots_dn$index <- unlist(indices)
 To plot:
 ```{r dotplot_NES_TFclass, fig.width=4, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
-p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) + 
+p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=TFcla6)) + 
   geom_dotplot(binaxis='y',
                stackdir='center',
                stackgroups = TRUE,
@@ -526,6 +526,11 @@ p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) +
                alpha=1,
                stroke=0) +
   scale_fill_manual(name='',
+                    breaks=levels(mots_up$TFcla6),
+                    values=palette,
+                    labels=levels(mots_up$TFcla6),
+                    guide=guide_legend(nrow = 1)) +
+  scale_colour_manual(name='',
                     breaks=levels(mots_up$TFcla6),
                     values=palette,
                     labels=levels(mots_up$TFcla6),
@@ -562,11 +567,6 @@ xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1
 ytext <- point.pos$y
 
 p +
-  scale_colour_manual(name='',
-                    breaks=levels(mots_up$TFcla6),
-                    values=palette,
-                    labels=levels(mots_up$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
   geom_text_repel(
     # reindex - point.pos is organised by X values, then by FILL colour
     # which equates to ordering tf.lab as X, then TFclass, then NES
@@ -605,7 +605,8 @@ p +
     segment.color = 'gray30',
     segment.alpha = 0.75,
     segment.size = 0.2) +
-  guides(fill = guide_legend(override.aes = aes(color = NA))) +
+  guides(fill = guide_legend(nrow=1),
+         colour = guide_legend(nrow=1)) +
   ylim(2.5,10)
 ```
 
@@ -617,7 +618,7 @@ Now for the downregulataed genes:
 
 ```{r dotplot_NES_TFclass_down, fig.width=4, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(8, 6, 2, 4, 10)], '#CCCCCC' )
-q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) + 
+q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=TFcla6)) + 
   geom_dotplot(binaxis='y',
                stackdir='center',
                stackgroups = TRUE,
@@ -627,6 +628,11 @@ q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=NULL)) +
                alpha=1,
                stroke=0) +
   scale_fill_manual(name='',
+                    breaks=levels(mots_dn$TFcla6),
+                    values=palette,
+                    labels=levels(mots_dn$TFcla6),
+                    guide=guide_legend(nrow = 1)) +
+  scale_colour_manual(name='',
                     breaks=levels(mots_dn$TFcla6),
                     values=palette,
                     labels=levels(mots_dn$TFcla6),
@@ -658,11 +664,6 @@ xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1
 ytext <- point.pos$y
 
 q +
-  scale_colour_manual(name='',
-                    breaks=levels(mots_dn$TFcla6),
-                    values=palette,
-                    labels=levels(mots_dn$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
   geom_text_repel(
     # reindex - point.pos is organised by X values, then by FILL colour
     # which equates to ordering tf.lab as X, then TFclass, then NES
@@ -705,8 +706,10 @@ q +
     segment.color = 'gray30',
     segment.alpha = 0.75,
     segment.size = 0.2) +
-  guides(fill = guide_legend(override.aes = aes(color = NA))) +
-  ylim(2.5,10)
+  guides(fill = guide_legend(nrow=1),
+         colour = guide_legend(nrow=1)) +
+  ylim(2.5,10) +
+  theme(plot.margin = margin(r = 50))
 ```
 
 ```{r}
@@ -720,29 +723,31 @@ ggsave(paste0(figdir, '/motifs_down_TFclass.pdf'))
 The beeswarm plot loses a bit the idea of the rank, so I try the lollipop plot, which will show as a continuously increasing function with the colour indicating the type of TF.
 
 ```{r}
-r <- ggplot(mots_up, aes(x=index, y=NES, fill=TFcla6, colour=TFcla6)) +
-  geom_segment(aes(x = index, xend = index,
-                   y = 0, yend = NES), linewidth=0.1) +
-  geom_point(size = 1, shape=21, stroke=0)
-r +
+palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
+r <- ggplot(mots_up, aes(x=index, y=NES)) +
+  geom_segment(aes(x = index, xend = index, y = 0, yend = NES, colour=TFcla6),
+               linewidth=0.1) +
+  geom_point(aes(fill=TFcla6),
+             size = 1, shape=21, stroke=0) +
   scale_colour_manual(name='',
-                      breaks=TFcla6,
+                      breaks=mots_up$TFcla6,
                       values=palette,
-                      labels=exgrid_red$conditions,
-                      guide=guide_legend(nrow = r)) +
+                      labels=mots_up$TFcla6) +
   scale_fill_manual(name='',
-                    breaks=levels(g$data.survtable$strata),
+                    breaks=mots_up$TFcla6,
                     values=palette,
-                    labels=exgrid_red$conditions,
-                    guide=guide_legend(nrow = r)) +
+                    labels=mots_up$TFcla6) +
   facet_grid(. ~ geneSet,  scales = "free", space = 'free') +
   xlab("TF class for enriched motif") +
   theme(strip.text.x = element_markdown(face='bold', colour='black', size=10),
-        strip.background.x = element_rect(fill=cet_pal(9, name='cbd1')[[4]],
+        strip.background.x = element_rect(fill=cet_pal(9, name='cbd1')[[6]],
                                           colour='white'),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = 'bottom'
         )
+r
 ```
+
+Something is going on with the colours (which didn't happen the other day!), but I will not continue with the experiment, as I do not think it looks any better.
 
