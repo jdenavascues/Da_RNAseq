@@ -616,7 +616,7 @@ ggsave(paste0(figdir, '/motifs_up_TFclass.pdf'))
 
 Now for the downregulataed genes:
 
-```{r dotplot_NES_TFclass_down, fig.width=4, fig.height=4}
+```{r dotplot_NES_TFclass_down, fig.width=4.5, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(8, 6, 2, 4, 10)], '#CCCCCC' )
 q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=TFcla6)) + 
   geom_dotplot(binaxis='y',
