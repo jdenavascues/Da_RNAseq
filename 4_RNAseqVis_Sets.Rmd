@@ -357,10 +357,6 @@ upsetplot
 grid.text("Set intersections for DEGs fc≥4", x = 0.65, y=0.95, gp=gpar(fontsize=18))
 ```
 
-```{r}
-
-```
-
 ```{r UpSet_plots_down}
 downsetplot <- upset(
   # data
@@ -410,25 +406,25 @@ downsetplot <- upset(
 
 pdf(file=paste0(figdir,'/UpSet_plot_down_logfc2.pdf'),
     width=8, height=4.5)
-upsetplot
+downsetplot
 grid.text("Fold change ≤ ¼", x = 0.65, y=0.95, gp=gpar(fontsize=18)) # ½
 dev.off()
 
 svg(file=paste0(figdir,'/UpSet_plot_down_logfc2.svg'),
     width=8, height=4.5)
-upsetplot
+downsetplot
 grid.text("Set intersections for DEGs fc<¼", x = 0.65, y=0.95, gp=gpar(fontsize=18)) # ½
 dev.off()
 
 tiff(file=paste0(figdir,'/UpSet_plot_down_logfc2.tiff'),
      width=10, height=12, units="in", res=300)
-upsetplot
+downsetplot
 grid.text("Set intersections for DEGs fc<¼", x = 0.65, y=0.95, gp=gpar(fontsize=18)) # ½
 dev.off()
 
 png(file=paste0(figdir,'/UpSet_plot_down_logfc2.png'),
     width=10, height=12, units="in", res=300)
-upsetplot
+downsetplot
 grid.text("Set intersections for DEGs fc<¼", x = 0.65, y=0.95, gp=gpar(fontsize=18)) # ½
 dev.off()
 

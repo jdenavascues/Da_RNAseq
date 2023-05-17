@@ -26,7 +26,7 @@ knitr::opts_chunk$set(dev = 'png',
 ```{r load_libraries, warning=FALSE, echo=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
-librarian::shelf(readxl, dplyr, purrr, stringr, santoku, calibrate)
+librarian::shelf(readxl, dplyr, purrr, stringr, santoku, calibrate, httr)
 # graphics
 librarian::shelf(cetcolor, ggplots2, ggpubr, ggtheme, ggtext, ggrepel)
 # convenience
@@ -120,11 +120,56 @@ DaDaOE_deg$reg <- regs$DaDaOE
 ScOE_deg$reg <- regs$ScOE
 ```
 
-Load `genes_of_interest`:
+Load `genes_of_interest`, which was manually curated by JdN from the literature and the markers defined by the Fly Cell Atlas paper:
 ```{r load_GOI}
 genes_of_interest <- read_excel('resources/genes_of_interest.xlsx', sheet='core')
 ```
 
+Create `xmarkers`, a list of _exclusive_ cell type markers as identifiedc/curated by the Fly Cell Atlas consortium. This is paywalled so I downloaded it manually:
+```{r}
+markers <- read_xlsx(file.path(getwd(), 'resources', 'science.abk2432_table s2.xlsx')) %>%
+  # get only the gut epithelium/muscle cell types
+  filter(Tissue=='gut' | `Annotation...1`=='enteroendocrine cell') %>%
+  # remove a hybrid/transitional cell type
+  filter(!str_detect(`Annotation...1`, 'differentiating')) %>%
+  # remove muscle/artefact cells
+  filter(!str_detect(`Broad annotation`, 'muscle|artefact')) %>%
+  # get just the columns with marker names
+  dplyr::select(contains(c('Annotation...1', 'Marker'))) %>%
+  # join all markers in a new column
+  tidyr::unite(FCAmarkers, contains('Markers'), sep = ', ') %>%
+  # make each gene name an independent string
+  rowwise() %>% mutate(FCAmarkers = list(unique(str_split(FCAmarkers, ', ')[[1]])))
+names(markers)[[1]] <- 'celltype'
+
+# filter by exclusivity, but keeping what is common to all enterocytes
+## first identify all EC markers
+ECmarkers <- markers %>%
+  filter(str_detect(celltype, 'enterocyte')) %>%
+  dplyr::select(FCAmarkers) %>%
+  unlist(use.names = FALSE) %>%
+  unique() %>% as.list()
+## then non-EC cell markers, with all their repetitions!!
+nonECmarkers <- markers %>%
+  filter(!str_detect(celltype, 'enterocyte')) %>%
+  dplyr::select(FCAmarkers) %>%
+  unlist(use.names = FALSE) %>% as.list()
+## get all unique markers
+repmarkers <- unlist(c(ECmarkers, nonECmarkers))
+reps <- rle(sort(repmarkers))
+xmarkers <- reps$values[reps$lengths==1]
+## apply criterion of exclusivity
+exclude <- function(x) x[x %in% xmarkers]
+markers <- markers %>%
+    mutate(exclusive = list(exclude(FCAmarkers)))
+pmgcelltypes <- c('intestinal stem cell', 'enteroblast', 'enteroendocrine cell', 'enterocyte of posterior adult midgut epithelium')
+pmg.markers <- markers %>%
+  filter(celltype %in% pmgcelltypes) %>%
+  dplyr::select(c(1,3))
+names(pmg.markers)[[2]] <- 'markers'
+cellcolours <- c('EE'='#CC79A7', 'EB'='#56B2E9', 'EC'='#009E73', 'ISC'='#D55E00')
+pmg.markers$cellcolour <- cellcolours
+```
 
 ## 2 MA plots using `ggpubr`
 
@@ -247,12 +292,6 @@ ggmaplot2 <- function(deg, goi_list, fc_thresh = 1.5,
 
 Apply this to the *daughterless* knockdown:
 ```{r ggmaplot2_da_knockdown}
-# define genes of interest
-# GoI <- genes_of_interest %>%
-#   filter(`FlyCellAtlas marker`=='T') %
-#   filter((`fate promoted` == 'EE') | 
-#          (`fate promoted` == 'EC')) %>%
-#   dplyr::select(gene_symbol)
   
 # genes of interest dysregulated in this condition
 goi_kd <- DaKD_deg %>% dplyr::filter(
@@ -288,6 +327,144 @@ ggsave('MA_daKD.svg', plot = last_plot(), device = 'svg',
 ggsave('MA_daKD.png', plot = last_plot(), device = png,
        path = figdir, dpi = 300)
 ```
+
+
+Now with cell type-specific colours:
+```{r MA_plot_customisation2}
+
+deg  <-  DaKD_deg
+goi_list  <- tidyr::unnest_longer(pmg.markers, markers) %>%
+  rename(gene_symbol = markers)
+
+ggmaplot3 <- function(deg, goi_list, fc_thresh = 1.5,
+                      md_label='*genotype^—^*', repulsion) {
+  # deg is the output of DESeq2 with an added column of gene symbols
+  # gene.symbols is that column
+  
+  # standard MA plot with `ggpubr`, using the CBD1 palette from `cetcolor` 
+  ma <- ggmaplot(
+    deg,
+    fdr = 0.05,
+    fc = fc_thresh,
+    genenames = deg$gene_symbols,
+    size = 2,
+    alpha = 0.5,
+    seed = NA,
+    font.label = c(16, "bold", "black"),
+    label.rectangle = FALSE,
+    palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3], # "#A89008"
+                cet_pal(n = 3, name = "cbd1", alpha = 1)[1], # "#3A90FE"
+                "#AAAAAA"),
+    top = 0,
+    main = NULL,
+    xlab = "log~2~(mean expression)",
+    ylab = "log~2~(fold change)",
+    ggtheme = theme_linedraw(),
+    legend = 'top'
+  )
+  
+  annotations <- data.frame(
+        xpos = floor(min(ggplot_build(ma)$layout$panel_params[[1]]$x.range)),
+        ypos = ceiling(max(abs(ggplot_build(ma)$layout$panel_params[[1]]$y.range))),
+        annotateText = md_label,
+        hjustvar = 0,
+        vjustvar = 1)
+  
+  genlabsup <- deg %>%
+    filter(gene_symbol %in% goi_list$gene_symbol &
+             log2FoldChange > fc_thresh &
+             padj < 0.05) %>%
+    dplyr::select(c(gene_symbol, baseMean, log2FoldChange)) %>%
+    dplyr::left_join(dplyr::select(goi_list, !'celltype'), by = 'gene_symbol')
+
+  genlabsdn <- deg %>%
+    filter(gene_symbol %in% goi_list$gene_symbol &
+             log2FoldChange < -fc_thresh &
+             padj < 0.05) %>%
+    dplyr::select(c(gene_symbol, baseMean, log2FoldChange)) %>%
+    dplyr::left_join(dplyr::select(goi_list, !'celltype'), by = 'gene_symbol')
+  
+  ma2 <- ma +
+    # mark special genes if upreg
+    geom_text_repel(data = genlabsup,
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                    colour = genlabsup$cellcolour,
+                    segment.color = '#6E5C03', # ==hue, <ligthness than than "#A89008"
+                    fontface = 'bold',
+                    segment.alpha = 0.8,
+                    segment.linetype = 3,
+                    hjust = 0,
+                    # positioning
+                    box.padding   = repulsion$box.padding,
+                    point.padding = repulsion$point.padding,
+                    nudge_x       = repulsion$nudge_x.up,
+                    nudge_y       = repulsion$nudge_y.up,
+                    force         = repulsion$force,
+                    force_pull    = repulsion$force_pull,
+                    max.overlaps  = Inf,
+                    xlim          = repulsion$xlims.up,    # NA repels from edges
+                    ylim          = repulsion$ylims.up,
+                    seed = 42) +
+    # mark special genes if downreg
+    geom_text_repel(data = genlabsdn,
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                     colour = genlabsdn$cellcolour,
+                     segment.color = '#0565AF', # ==hue, <ligthness than "#3A90FE"
+                     fontface = 'bold',
+                     segment.alpha = 0.8,
+                     segment.linetype = 3,
+                     hjust = 0,
+                     # positioning
+                     box.padding   = repulsion$box.padding,
+                     point.padding = repulsion$point.padding,
+                     nudge_x       = repulsion$nudge_x.dn,
+                     nudge_y       = repulsion$nudge_y.dn,
+                     force         = repulsion$force,
+                     force_pull    = repulsion$force_pull,
+                     max.overlaps  = Inf,
+                     xlim          = repulsion$xlims.dn,             # NA repels from edges
+                     ylim          = repulsion$ylims.dn,
+                     seed = 42) +
+    # genotype label
+    geom_richtext(
+      data = annotations,
+      aes(x = xpos,y = ypos,
+          hjust = hjustvar, vjust = vjustvar,
+          label = annotateText,
+          fontface = 'bold',
+          size = 9),
+      fill = NA,
+      label.color = NA,
+      label.padding = grid::unit(rep(0, 4), "pt"),
+      label.margin = grid::unit(rep(0, 4), "pt")
+      ) +
+    # legend
+    guides(size = 'none') +
+    # apply markdown formatting, etc
+    theme(# markdown
+          axis.title.x = element_markdown(size = 14, face = 'bold'),
+          axis.title.y = element_markdown(size = 14, face = 'bold'),
+          axis.text = element_text(size = 10),
+          # grid and panel
+          panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+          panel.grid = element_blank(),
+          # legend
+          legend.margin = margin(b = -10),
+          legend.key.size = unit(1.2, 'cm'),
+          legend.text = element_text(size = 12, face = 'bold')
+          )
+  return(ma)
+}
+```
+
 
 To the *daughterless* overexpression:
 ```{r ggmaplot2_da_overexpression}

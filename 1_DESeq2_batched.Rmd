@@ -28,7 +28,7 @@ knitr::opts_chunk$set(dev = 'png',
 
 
 **Libraries needed:**
-```{r load_libraries, warning=FALSE, echo=FALSE}
+```{r load_libraries, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
 librarian::shelf(
   # data
@@ -393,7 +393,9 @@ for (condtn in test_conditions) {
   # save for later
   saveRDS(deData, file=paste0("output/", 'Control_vs_', condtn, ".RDS"))
   # save as Supplementary data for publication
-  tests[[paste0('Control_vs_', condtn)]] <- deData
+  cols <- c('gene_symbol', 'ensemblGeneID', 'log2FoldChange', 'padj')
+  rownames(deData) <- NULL
+  tests[[paste0('Control_vs_', condtn)]] <- deData %>% dplyr::select(all_of(cols))
 }
 ```
 Note that in the parameter `contrast`, `'Control'` is last - I cannot find formal justification of this, but even with the `relevel`ling of the `condition` column of the experimental design object to make 'Control' the reference level, this needs to go last, or the log~2~FC values will have the opposite sign.
@@ -407,7 +409,7 @@ Supplementary Table S3:
 # add `rawCounts` to `tests`
 tests <- rlist::list.append(tests, `Raw counts per gene per sample`=rawCounts)
 # Supplementary data for publication
-write_xlsx(tests, path='output/Table S3.xlsx')
+write_xlsx(tests, path = 'output/Table S3.xlsx')
 ```
 
 Finally, to have the experimental designed captured in a flexible manner:

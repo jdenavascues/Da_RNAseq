@@ -35,7 +35,7 @@ librarian::shelf(
   # data manip.
   dplyr, tidyr, stringr, org.Dm.eg.db, DOSE, fgsea, clusterProfiler, purrr, biomaRt, gage,
   # plotting
-  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork, pathview,
+  pathview,  cetcolor, enrichplot, genekitr, ggh4x, ggtheme, ggtext, ggrepel, ggnewscale, patchwork,
 # convenience
   here)
 
