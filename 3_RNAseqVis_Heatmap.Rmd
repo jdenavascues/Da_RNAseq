@@ -22,8 +22,8 @@ knitr::opts_chunk$set(dev = 'png',
                       fig.path='integration/figures/', warning=FALSE, message=FALSE)
 ```
 
-**Libraries needed:**
-```{r, warning=FALSE, echo=FALSE}
+**Libraries:**
+```{r, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(tibble, stringr, purrr, dplyr, plyr, DescTools, limma)

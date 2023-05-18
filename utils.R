@@ -1,41 +1,339 @@
-###
-### 1
-###
+# +-------------------------------------------------------------+
+# |  1 Differential gene expression.                            |
+# +-------------------------------------------------------------+
 
 
 
 
-###
-### 2
-###
+# +-------------------------------------------------------------+
+# |  2 Visualisation ...                   |
+# +-------------------------------------------------------------+
 
 
 
 
-###
-### 3
-###
+# +-------------------------------------------------------------+
+# |  3 Visualisation ...                   |
+# +-------------------------------------------------------------+
 
 
 
 
-###
-### 4
-###
+# +-------------------------------------------------------------+
+# |  4 Visualisation ...                   |
+# +-------------------------------------------------------------+
 
 
 
 
-###
-### 5
-###
 
 
 
+# +-------------------------------------------------------------+
+# |  5 Visualisation with scatter plots (MA).                   |
+# +-------------------------------------------------------------+
 
-###
-### 6-1 Gene Set over-representation/enrichment
-###
+
+# classify lists of genes as up/non/down-regulated
+extract_regulated_sets2 <- function(list_of_degs, names_degs, fc_thresh=1.5, cols) {
+  # fc_thresh must be a positive number
+  # list_of_degs is a list of dataframes
+  # names_degs is a list of strings
+  # they must have the same length
+  reg_lvl <- paste0(' reg@log~2~FC≥', fc_thresh)
+  breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
+  regulated_sets <- NULL
+  for (l in 1:length(list_of_degs)) {
+    degs_na <- dplyr::select(list_of_degs[[l]], all_of(cols))
+    # better not pass NAs to kiru
+    degs <- na.omit(degs_na)
+    # filter by log2FC threshold, create `reg`(ulated) col with up/down/non
+    degs$reg <- 
+      kiru(
+        degs$log2FoldChange,
+        breaks = breaks,
+        extend = TRUE,
+        labels=c("down", "non", "up")
+      )
+    # filter by p-val
+    degs$reg <- as.character(degs$reg) # remove factor
+    x <- 1:nrow(degs)
+    degs$reg <- ifelse(degs[x,'padj']<0.05, degs[x,'reg'], 'non')
+    # recover NAs as non-regulataed
+    added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
+    added_nas$reg <- 'non'
+    degs <- rbind(degs, added_nas)
+    # store reg status
+    degs[ , names_degs[[l]] ] <- degs$reg
+    regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
+  }
+  regulated_sets <- purrr::reduce(regulated_sets, full_join, by='ensemblGeneID')
+  rownames(regulated_sets) <- regulated_sets$ensemblGeneID
+  regulated_sets <- dplyr::select(regulated_sets, -ensemblGeneID)
+  return(regulated_sets)
+}
+
+# custom MA plot
+ggmaplot2 <- function(deg, markers, fc_thresh = 1.5,
+                      md_label='*genotype^—^*', repulsion) {
+  # deg is the output of DESeq2 with an added column of gene symbols
+  # gene.symbols is that column
+  
+  make_goilist_ggmaplot2 <- function(deg, fc_thresh, markerlist) {
+    goi_list <- deg %>% dplyr::filter(gene_symbol %in% markerlist &
+                                        abs(log2FoldChange) > fc_thresh &
+                                        padj<0.05)
+    return(goi_list)
+  }
+  
+  # standard MA plot with `ggpubr`, using the CBD1 palette from `cetcolor` 
+  ma <- ggmaplot(
+    deg,
+    fdr = 0.05,
+    fc = fc_thresh,
+    genenames = deg$gene_symbols,
+    size = 2,
+    alpha = 0.5,
+    seed = NA,
+    font.label = c(16, "bold", "black"),
+    label.rectangle = FALSE,
+    palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3], # "#A89008"
+                cet_pal(n = 3, name = "cbd1", alpha = 1)[1], # "#3A90FE"
+                "#AAAAAA"),
+    top = 0,
+    main = NULL,
+    xlab = "log~2~(mean expression)",
+    ylab = "log~2~(fold change)",
+    ggtheme = theme_linedraw(),
+    legend = 'top'
+  )
+  
+  annotations <- data.frame(
+    xpos = floor(min(ggplot_build(ma)$layout$panel_params[[1]]$x.range)),
+    ypos = ceiling(max(abs(ggplot_build(ma)$layout$panel_params[[1]]$y.range))),
+    annotateText = md_label,
+    hjustvar = 0,
+    vjustvar = 1)
+  
+  goi_list <- make_goilist_ggmaplot2(deg, fc_thresh, unlist(markers$xmarkers))
+  
+  ma <- ma +
+     # mark special genes if upreg
+     geom_text_repel(data = deg %>% filter(gene_symbol %in% goi_list$gene_symbol &
+                                             log2FoldChange > 0),
+                     aes(x = log2(baseMean),
+                         y = log2FoldChange,
+                         label = gene_symbol,
+                         segment.square  = FALSE,
+                         segment.inflect = TRUE),
+                     color         = '#6E5C03', # ==hue, <ligthness than than "#A89008"
+                     fontface = 'bold',
+                     segment.alpha = 0.8,
+                     segment.linetype = 3,
+                     hjust = 0,
+                     # positioning
+                     box.padding   = repulsion$box.padding,
+                     point.padding = repulsion$point.padding,
+                     nudge_x       = repulsion$nudge_x.up,
+                     nudge_y       = repulsion$nudge_y.up,
+                     force         = repulsion$force,
+                     force_pull    = repulsion$force_pull,
+                     max.overlaps  = Inf,
+                     xlim          = repulsion$xlims.up,    # NA repels from edges
+                     ylim          = repulsion$ylims.up,
+                     seed          = repulsion$seed.up) +
+     # mark special genes if downreg
+     geom_text_repel(data = deg %>% filter(gene_symbol %in% goi_list$gene_symbol &
+                                             log2FoldChange < 0),
+                     aes(x = log2(baseMean),
+                         y = log2FoldChange,
+                         label = gene_symbol,
+                         segment.square  = FALSE,
+                         segment.inflect = TRUE),
+                     color         = '#0565AF', # ==hue, <ligthness than "#3A90FE"
+                     fontface = 'bold',
+                     segment.alpha = 0.8,
+                     segment.linetype = 3,
+                     hjust = 0,
+                     # positioning
+                     box.padding   = repulsion$box.padding,
+                     point.padding = repulsion$point.padding,
+                     nudge_x       = repulsion$nudge_x.dn,
+                     nudge_y       = repulsion$nudge_y.dn,
+                     force         = repulsion$force,
+                     force_pull    = repulsion$force_pull,
+                     max.overlaps  = Inf,
+                     xlim          = repulsion$xlims.dn,             # NA repels from edges
+                     ylim          = repulsion$ylims.dn,
+                     seed          = repulsion$seed.dn) +
+     # genotype label
+     geom_richtext(
+       data = annotations,
+       aes(x = xpos,y = ypos,
+           hjust = hjustvar, vjust = vjustvar,
+           label = annotateText,
+           fontface = 'bold',
+           size = 9),
+       fill = NA,
+       label.color = NA,
+       label.padding = grid::unit(rep(0, 4), "pt"),
+       label.margin = grid::unit(rep(0, 4), "pt")
+     ) +
+     # legend
+     guides(size = 'none') +
+     # apply markdown formatting, etc
+     theme(# markdown
+       axis.title.x = element_markdown(size = 14, face = 'bold'),
+       axis.title.y = element_markdown(size = 14, face = 'bold'),
+       axis.text = element_text(size = 10),
+       # grid and panel
+       panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+       panel.grid = element_blank(),
+       # legend
+       legend.margin = margin(b = -10),
+       legend.key.size = unit(1.2, 'cm'),
+       legend.text = element_text(size = 12, face = 'bold')
+       )
+  return(ma)
+}
+
+# custom MA plot with labels coloured by cell type
+ggmaplot3 <- function(deg, markers, fc_thresh = 1.5,
+                      md_label='*genotype^—^*', repulsion) {
+  # deg is the output of DESeq2 with an added column of gene symbols
+  # gene.symbols is that column
+  
+  goi_list  <- tidyr::unnest_longer(markers, xmarkers) %>%
+    rename(gene_symbol = xmarkers)
+  
+  # standard MA plot with `ggpubr`, using the CBD1 palette from `cetcolor` 
+  ma <- ggmaplot(
+    deg,
+    fdr = 0.05,
+    fc = fc_thresh,
+    genenames = deg$gene_symbols,
+    size = 2,
+    alpha = 0.5,
+    seed = NA,
+    font.label = c(16, "bold", "black"),
+    label.rectangle = FALSE,
+    palette = c(cet_pal(n = 3, name = "cbd1", alpha = 1)[3], # "#A89008"
+                cet_pal(n = 3, name = "cbd1", alpha = 1)[1], # "#3A90FE"
+                "#AAAAAA"),
+    top = 0,
+    main = NULL,
+    xlab = "log~2~(mean expression)",
+    ylab = "log~2~(fold change)",
+    ggtheme = theme_linedraw(),
+    legend = 'top'
+  )
+  
+  annotations <- data.frame(
+    xpos = floor(min(ggplot_build(ma)$layout$panel_params[[1]]$x.range)),
+    ypos = ceiling(max(abs(ggplot_build(ma)$layout$panel_params[[1]]$y.range))),
+    annotateText = md_label,
+    hjustvar = 0,
+    vjustvar = 1)
+  
+  genlabsup <- deg %>%
+    filter(gene_symbol %in% goi_list$gene_symbol &
+             log2FoldChange > fc_thresh &
+             padj < 0.05) %>%
+    dplyr::select(c(gene_symbol, baseMean, log2FoldChange)) %>%
+    dplyr::left_join(dplyr::select(goi_list, !'celltype'), by = 'gene_symbol')
+  
+  genlabsdn <- deg %>%
+    filter(gene_symbol %in% goi_list$gene_symbol &
+             log2FoldChange < -fc_thresh &
+             padj < 0.05) %>%
+    dplyr::select(c(gene_symbol, baseMean, log2FoldChange)) %>%
+    dplyr::left_join(dplyr::select(goi_list, !'celltype'), by = 'gene_symbol')
+  
+  ma <- ma +
+    # mark special genes if upreg
+    geom_text_repel(data = genlabsup,
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                    colour = genlabsup$cellcolour,
+                    segment.color = '#6E5C03', # ==hue, <ligthness than than "#A89008"
+                    fontface = 'bold',
+                    segment.alpha = 0.8,
+                    segment.linetype = 3,
+                    hjust = 0,
+                    # positioning
+                    box.padding   = repulsion$box.padding,
+                    point.padding = repulsion$point.padding,
+                    nudge_x       = repulsion$nudge_x.up,
+                    nudge_y       = repulsion$nudge_y.up,
+                    force         = repulsion$force,
+                    force_pull    = repulsion$force_pull,
+                    max.overlaps  = Inf,
+                    xlim          = repulsion$xlims.up,    # NA repels from edges
+                    ylim          = repulsion$ylims.up,
+                    seed = repulsion$seed.up) +
+    # mark special genes if downreg
+    geom_text_repel(data = genlabsdn,
+                    aes(x = log2(baseMean),
+                        y = log2FoldChange,
+                        label = gene_symbol,
+                        segment.square  = FALSE,
+                        segment.inflect = TRUE),
+                    colour = genlabsdn$cellcolour,
+                    segment.color = '#0565AF', # ==hue, <ligthness than "#3A90FE"
+                    fontface = 'bold',
+                    segment.alpha = 0.8,
+                    segment.linetype = 3,
+                    hjust = 0,
+                    # positioning
+                    box.padding   = repulsion$box.padding,
+                    point.padding = repulsion$point.padding,
+                    nudge_x       = repulsion$nudge_x.dn,
+                    nudge_y       = repulsion$nudge_y.dn,
+                    force         = repulsion$force,
+                    force_pull    = repulsion$force_pull,
+                    max.overlaps  = Inf,
+                    xlim          = repulsion$xlims.dn,             # NA repels from edges
+                    ylim          = repulsion$ylims.dn,
+                    seed = repulsion$seed.dn) +
+    # genotype label
+    geom_richtext(
+      data = annotations,
+      aes(x = xpos,y = ypos,
+          hjust = hjustvar, vjust = vjustvar,
+          label = annotateText,
+          fontface = 'bold',
+          size = 9),
+      fill = NA,
+      label.color = NA,
+      label.padding = grid::unit(rep(0, 4), "pt"),
+      label.margin = grid::unit(rep(0, 4), "pt")
+    ) +
+    # legend
+    guides(size = 'none') +
+    # apply markdown formatting, etc
+    theme(# markdown
+      axis.title.x = element_markdown(size = 14, face = 'bold'),
+      axis.title.y = element_markdown(size = 14, face = 'bold'),
+      axis.text = element_text(size = 10),
+      # grid and panel
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      panel.grid = element_blank(),
+      # legend
+      legend.margin = margin(b = -10),
+      legend.key.size = unit(1.2, 'cm'),
+      legend.text = element_text(size = 12, face = 'bold')
+    )
+  return(ma)
+}
+
+
+# +-------------------------------------------------------------+
+# |  6-1 Gene Set over-representation/enrichment.               |
+# +-------------------------------------------------------------+
+
 
 # To get a differentially expressed gene set for Over-Representation Analysis
 make_degset <- function(deg, up, fc_thresh) {
@@ -126,7 +424,7 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, cluste
 ## gseCP_list is a list of clusterProfiler GSEA objects
 ## conditions is a list with the names of the experimental conditions for those GSEA objects
 ## dvar (data variable) for "name injection" with <data-masking> tidyverse functions
-# gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar, cluster=FALSE, nsig.out=FALSE) {
+# gseCP_summarise_old <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar, cluster=FALSE, nsig.out=FALSE) {
 #   if ( !(dvar %in% c('NES', 'p.adjust')) ) {
 #     stop("The argument `dvar` must be one of `NES` and `p.adjust`")
 #   }
