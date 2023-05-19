@@ -329,10 +329,136 @@ ggmaplot3 <- function(deg, markers, fc_thresh = 1.5,
   return(ma)
 }
 
+# gene-based layered heatmaps
 
-# +-------------------------------------------------------------+
-# |  6-1 Gene Set over-representation/enrichment.               |
-# +-------------------------------------------------------------+
+# horizontal
+layer.heatmaph <- function(genehm.df, cluster=FALSE, arr=NULL) {
+  logFC.df <- genehm.df %>% dplyr::select(-p.adjust)
+  padj.df <- genehm.df %>% dplyr::select(-log2FoldChange)
+  if (cluster) {
+    vectors <- genehm.df %>%
+      dplyr::select(gene_symbol, log2FoldChange, condition, cellcolour) %>%
+      pivot_wider(names_from = condition, values_from = log2FoldChange)
+    clust <- hclust(dist(as.matrix(vectors[3:6])))
+    logFC.df <- logFC.df %>%
+      mutate(gene_symbol = factor(gene_symbol, levels=vectors$gene_symbol[clust$order]))
+  } else if (!cluster & !is.null(arr)) {
+    logFC.df <- logFC.df %>% arrange(!!as.name(arr), gene_symbol, condition) 
+    padj.df <- padj.df %>% arrange(!!as.name(arr), gene_symbol, condition)
+    clust <- data.frame(order = 1:length(unique(logFC.df$gene_symbol)))
+  }
+  xlab.colours <- logFC.df$cellcolour[seq(1, nrow(logFC.df), 4)][clust$order]
+  p <- ggplot(logFC.df, aes(x=gene_symbol, y=condition)) +
+    # plot statistic (log2fc)
+    geom_tile(aes(fill=log2FoldChange), width=1) +
+    scale_fill_gradient2(low = cet_pal(3, name='cbd1')[1],
+                         mid = cet_pal(3, name='cbd1')[2],
+                         high = cet_pal(3, name='cbd1')[3],
+                         midpoint = 0) +
+    # plot p-value
+    # statistically significant with colour and shape `*`
+    geom_point(data=subset(padj.df, p.adjust<0.05),
+               aes(x=gene_symbol, y=condition, colour=-log10(p.adjust)),
+               size=3, shape=8, stroke=1.5, alpha=1) +
+    scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                          high = cet_pal(3, name='d2')[3]) +
+    coord_equal() +
+    theme_bw()
+  if (cluster) {
+    p <- p +
+      scale_x_discrete(labels = levels(logFC.df$gene_symbol),
+                       position = "top",
+                       expand = expansion(mult = 0, add = 0))
+  } else {
+    p <- p +
+      scale_x_discrete(position = "top",
+                       expand = expansion(mult = 0, add = 0))
+  }
+  p <- p +
+    scale_y_discrete(expand = expansion(mult = 0, add = 0)) +
+    labs(fill = 'log~2~FC',
+         colour = '-log~10~(_p.adj_)<br><span style = "font-size:8pt;">_p.adj_<0.05</span>') +
+    theme(axis.text.x = element_markdown(angle=25, hjust=0,
+                                         face='bold', size=10.5,
+                                         colour = xlab.colours),
+          axis.text.y = element_markdown(hjust=1, face='bold', size=12),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          legend.title = element_markdown(hjust=0.5, vjust=0.75),
+          legend.direction = 'horizontal',
+          legend.position = 'bottom',
+          panel.grid = element_blank(),
+          panel.border = element_rect(linewidth = 1))
+  return(p)
+}
+
+# vertical
+layer.heatmapv <- function(genehm.df, cluster=FALSE, arr=NULL) {
+  logFC.df <- genehm.df %>% dplyr::select(-p.adjust)
+  padj.df <- genehm.df %>% dplyr::select(-log2FoldChange)
+  if (cluster) {
+    vectors <- genehm.df %>%
+      dplyr::select(gene_symbol, log2FoldChange, condition, cellcolour) %>%
+      pivot_wider(names_from = condition, values_from = log2FoldChange)
+    clust <- hclust(dist(as.matrix(vectors[3:6])))
+    logFC.df <- logFC.df %>%
+      mutate(gene_symbol = factor(gene_symbol, levels=vectors$gene_symbol[clust$order]))
+  } else if (!cluster & !is.null(arr)) {
+    logFC.df <- logFC.df %>% arrange(!!as.name(arr), gene_symbol, condition) 
+    padj.df <- padj.df %>% arrange(!!as.name(arr), gene_symbol, condition)
+    clust <- data.frame(order = 1:length(unique(logFC.df$gene_symbol)))
+  }
+  ylab.colours <- logFC.df$cellcolour[seq(1, nrow(logFC.df), 4)][clust$order]
+  p <- ggplot(logFC.df, aes(x=condition, y=gene_symbol)) +
+    # plot statistic (log2fc)
+    geom_tile(aes(fill=log2FoldChange), width=1) +
+    scale_fill_gradient2(low = cet_pal(3, name='cbd1')[1],
+                         mid = cet_pal(3, name='cbd1')[2],
+                         high = cet_pal(3, name='cbd1')[3],
+                         midpoint = 0) +
+    # plot p-value
+    # statistically significant with colour and shape `*`
+    geom_point(data=subset(padj.df, p.adjust<0.05),
+               aes(x=condition, y=gene_symbol, colour=-log10(p.adjust)),
+               size=3, shape=8, stroke=1.5, alpha=1) +
+    scale_colour_gradient(low = cet_pal(3, name='d2')[2],
+                          high = cet_pal(3, name='d2')[3]) +
+    coord_equal() +
+    theme_bw()
+  if (cluster) {
+    p <- p +
+      scale_y_discrete(labels = levels(logFC.df$gene_symbol),
+                       expand = expansion(mult = 0, add = 0),
+                       position = 'right')
+  } else {
+    p <- p +
+      scale_y_discrete(expand = expansion(mult = 0, add = 0),
+                       position = 'right')
+  }
+  p <- p +
+    scale_x_discrete(expand = expansion(mult = 0, add = 0),
+                     position = 'bottom') +
+    labs(fill = 'log~2~FC',
+         colour = '-log~10~(_p.adj_)<br><span style = "font-size:8pt;">_p.adj_<0.05</span>') +
+    theme(axis.text.y = element_markdown(angle=0, hjust=0,
+                                         face='bold', size=12,
+                                         colour = ylab.colours),
+          axis.text.x = element_markdown(hjust=0.5, face='bold', size=20,
+                                         angle=25),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          legend.title = element_markdown(hjust=0.5, vjust=0.75),
+          legend.direction = 'vertical',
+          legend.position = 'left',
+          panel.grid = element_blank(),
+          panel.border = element_rect(linewidth = 1))
+  return(p)
+}
+
+
+### +-------------------------------------------------------------+
+### |  6-1 Gene Set over-representation/enrichment.               |
+### +-------------------------------------------------------------+
 
 
 # To get a differentially expressed gene set for Over-Representation Analysis
