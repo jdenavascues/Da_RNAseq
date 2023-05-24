@@ -93,7 +93,7 @@ head(
 
 First let's run `clusterProfiler::GSEA`:
 ```{r dutta}
-dutta_gmx <- import_from_gmx(paste0(getwd(),'/resources/Dutta.gmx'))
+dutta_gmx <- import_from_gmx(paste0(getwd(),'/resources/GMX/Dutta.gmx'))
 
 daKD_gse_dutta <- GSEA(geneList=make_degrank(DaKD_deg, mode='log2fc', key='ensemblGeneID'),
                        exponent = 1,
@@ -220,7 +220,7 @@ dev.off()
 To simplify later on the GSEA calls:
 ```{r zeng}
 # common gene set
-zeng_gmx <- import_from_gmx(paste0(getwd(),'/resources/Zeng.gmx'))
+zeng_gmx <- import_from_gmx(paste0(getwd(),'/resources/GMX/Zeng.gmx'))
 zeng_gmx$term <- str_replace_all(zeng_gmx$term, c(
   "Excess of.ISC.or.EB" = "Excess ISC/EB",
   "ISC to.EC"           = "ISC to EC",
@@ -367,8 +367,6 @@ glad_sub2_gmx <- refine_glad_by(glad_dataset, 'Sub.sub.group')
 
 GSEA calls, major lists:
 ```{r hu_GLAD}
-# common gene set
-#old_glad_gmx <- import_from_gmx(paste0(getwd(),'/resources/GLAD.gmx'))
 # common parameters
 GSEAparams <- list(
   exponent = 1,
@@ -427,6 +425,9 @@ gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
 sets.as.factors <- unique(glad_gmx$term)
 layerhm.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors,
                               cluster = TRUE, nsig.out = TRUE)
+layerhm.df <- layerhm.df %>%
+  filter(ID != 'Metabolic vs2')
+layerhm.df$ID <- forcats::fct_drop(layerhm.df$ID, only = 'Metabolic vs2')
 
 subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
 p <- layer.heatmap(layerhm.df, subt)
@@ -435,20 +436,7 @@ p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
 
 ggsave(file.path(figdir,'GSEA_GLAD1.pdf'))
 ```
-```{r create_dfs_for_NESheatmap_GLAD2, fig.width=12}
-gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
-# `conditions` were defined further above
-sets.as.factors <- unique(glad_gmx$term)
-layerhm.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors,
-                              cluster = TRUE, nsig.out = FALSE)
 
-subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
-p <- layer.heatmap(layerhm.df, subt)
-p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
-  theme(plot.margin = margin(r = 120))
-
-ggsave(file.path(figdir,'GSEA_GLAD2.pdf'))
-```
 
 #### GSEA and layered heatmaps for GLAD sub.terms 
 
@@ -484,7 +472,7 @@ lhm_gladsub_list <- lapply(
                        lapply(gladsub_gsealists, '[[', names(glad_sub_gmx)[[x]]),
                        conditions,
                        unique(glad_sub_gmx[[x]]$term),
-                       cluster = TRUE,
+                       cluster = FALSE,
                        nsig.out = TRUE)
   )
 
@@ -508,7 +496,7 @@ p_list <- lapply(
 And to visualise:
 ```{r subsets_glad_hm_2}
 p_list[[2]]
-ggsave(file.path(figdir,'GSEA_hedgehog.pdf'))
+ggsave(file.path(figdir,'GSEA_notch.pdf'))
 ```
 
 ```{r subsets_glad_hm_1}
@@ -563,7 +551,7 @@ lhm_gladsub2_list <- lapply(
                        lapply(gladsub2_gsealists, '[[', names(glad_sub2_gmx)[[x]]),
                        conditions,
                        unique(glad_sub2_gmx[[x]]$term),
-                       cluster = TRUE,
+                       cluster = FALSE,
                        nsig.out = TRUE)
   )
 

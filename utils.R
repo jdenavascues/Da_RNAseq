@@ -556,9 +556,9 @@ import_from_gmx <- function(gmxfile) {
   return(df)
 }
 
-gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, cluster=FALSE, nsig.out=FALSE) {
+gseCP_summarise <- function(gmx, gse_list, conditions, sets.as.factors, cluster=FALSE, nsig.out=FALSE) {
   # purr::map to convert the gse_list from S4 objects to their @result slots 
-  gseCP_list <- map( gseCP_list, \(x) dplyr::select(x@result, NES, p.adjust, ID) )
+  gseCP_list <- map( gse_list, \(x) dplyr::select(x@result, NES, p.adjust, ID) )
   # name them to associate conditions with the data
   # add condition as an extra column
   gseCP_list <- lapply( 1:length(gseCP_list), \(x) cbind(gseCP_list[[x]],
@@ -566,17 +566,6 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, cluste
   df <- bind_rows(gseCP_list)
   df$condition <- factor(df$condition, levels = conditions)
   df$ID <- factor(df$ID, levels = sets.as.factors)
-  # apply clustering
-  if (cluster & length(sets.as.factors)>2) { # `hclust` must have n >= 2 objects to cluster
-    vectors <- df %>%
-      dplyr::select(ID, NES, condition) %>%
-      pivot_wider(names_from = condition, values_from = NES) %>%
-      mutate_all(replace_na, 100)
-    clust <- hclust(dist(as.matrix(vectors[2:length(gseCP_list)])))
-    df$ID <- factor(df$ID, levels=vectors$ID[clust$order])
-  } else if (cluster & length(sets.as.factors < 3)) {
-    warning("`hclust` must have n >= 2 objects to cluster. NES columns will not be clustered.")
-  }
   # apply filtering
   if (nsig.out) {
       # get the IDs for which there is at least one condition with significant enrichment
@@ -589,6 +578,17 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, cluste
       # to avoid passing on non-filtered terms
       df$ID <- as.character(df$ID)
       levels(df$ID) <- factor(unique(df$ID))
+  }
+  # apply clustering
+  if (cluster & length(sets.as.factors)>2) { # `hclust` must have n >= 2 objects to cluster
+    vectors <- df %>%
+      dplyr::select(ID, NES, condition) %>%
+      pivot_wider(names_from = condition, values_from = NES) %>%
+      mutate_all(replace_na, 100)
+    clust <- hclust(dist(as.matrix(vectors[2:length(gseCP_list)])))
+    df$ID <- factor(df$ID, levels=vectors$ID[clust$order])
+  } else if (cluster & length(sets.as.factors < 3)) {
+    warning("`hclust` must have n >= 2 objects to cluster. NES columns will not be clustered.")
   }
   return(df)
 }
