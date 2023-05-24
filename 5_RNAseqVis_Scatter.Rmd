@@ -29,7 +29,7 @@ if (!require("librarian")) install.packages("librarian")
 # data
 librarian::shelf(
   # data manip.
-  readxl, writexl, dplyr, purrr, stringr, santoku, calibrate,
+  readxl, writexl, dplyr, tidyr, purrr, stringr, santoku, calibrate,
   # plotting
   cetcolor, ggplots2, ggpubr, ggthemes, ggtext, ggrepel,
 # convenience
@@ -117,7 +117,7 @@ markers <- read_xlsx(file.path(getwd(), 'resources', 'science.abk2432_table s2.x
   # get just the columns with marker names
   dplyr::select(contains(c('Annotation...1', 'Marker'))) %>%
   # join all markers in a new column
-  tidyr::unite(gene_symbol, contains('Markers'), sep = ', ')
+  unite(gene_symbol, contains('Markers'), sep = ', ')
 names(markers)[[1]] <- 'celltype'
 ```
 
@@ -157,8 +157,6 @@ nonECmarkers <- markers %>%
 repmarkers <- unlist(c(ECmarkers, nonECmarkers))
 reps <- rle(sort(repmarkers))
 xmarkers <- reps$values[reps$lengths==1]
-# trim and change names to match naming/presence in DEG datasets
-xmarkers <- xmarkers[!(xmarkers %in% missed)]
 ## apply criterion of exclusivity
 exclude <- function(x) x[x %in% xmarkers]
 markers <- markers %>%
@@ -173,7 +171,7 @@ pmg.markers <- markers %>%
 - Add cell type colours HEX codes
 
 ```{r colour_markers}
-write_xlsx(tidyr::unnest_longer(pmg.markers, xmarkers) %>%
+write_xlsx(unnest_longer(pmg.markers, xmarkers) %>%
     rename(gene_symbol = xmarkers),
     path = 'output/preliminary_Table S4.xlsx')
 cellcolours <- c('EB'='#56B2E9', 'EC'='#009E73', 'EE'='#CC79A7', 'ISC'='#D55E00')
@@ -329,63 +327,23 @@ genehm.df <- bind_rows(ScOE_deg, DaDaOE_deg, DaOE_deg, DaKD_deg) %>%
 ```
 
 
-
-
-```{r}
-layer.heatmap2 <- function(genehm.df, cluster=FALSE, arr=NULL) {
-  logFC.df <- genehm.df %>% dplyr::select(-p.adjust)
-  padj.df <- genehm.df %>% dplyr::select(-log2FoldChange)
-  if (cluster) {
-    vectors <- genehm.df %>%
-      dplyr::select(gene_symbol, log2FoldChange, condition, cellcolour) %>%
-      pivot_wider(names_from = condition, values_from = log2FoldChange)
-    clust <- hclust(dist(as.matrix(vectors[3:6])))
-    genehm.df <- genehm.df %>%
-      mutate(gene_symbol = factor(gene_symbol, levels=vectors$gene_symbol[clust$order]))
-    } else if (!cluster & !is.null(arr)) {
-    logFC.df <- logFC.df %>% arrange(!!as.name(arr), gene_symbol, condition) 
-    padj.df <- padj.df %>% arrange(!!as.name(arr), gene_symbol, condition)
-    clust <- data.frame(order = 1:length(unique(logFC.df$gene_symbol)))
-  }
-  xlab.colours <- logFC.df$cellcolour[seq(1, nrow(logFC.df), 4)][clust$order]
-  p <- ggplot(logFC.df, aes(x=gene_symbol, y=condition)) +
-    # plot statistic (log2fc)
-    geom_tile(aes(fill=log2FoldChange), width=1) +
-    scale_fill_gradient2(low = cet_pal(3, name='cbd1')[1],
-                         mid = cet_pal(3, name='cbd1')[2],
-                         high = cet_pal(3, name='cbd1')[3],
-                         midpoint = 0) +
-    # plot p-value
-    # statistically significant with colour and shape `*`
-    geom_point(data=subset(padj.df, p.adjust<0.05),
-               aes(x=gene_symbol, y=condition, colour=-log10(p.adjust)),
-               size=3, shape=8, stroke=1.5, alpha=1) +
-    scale_colour_gradient(low = cet_pal(3, name='d2')[2],
-                          high = cet_pal(3, name='d2')[3]) +
-    coord_equal() +
-    theme_bw() +
-    scale_x_discrete(position = "top",
-                     expand = expansion(mult = 0, add = 0)) +
-    scale_y_discrete(expand = expansion(mult = 0, add = 0)) +
-    labs(fill = 'log~2~FC',
-         colour = '-log~10~(_p.adj_)<br><span style = "font-size:8pt;">_p.adj_<0.05</span>') +
-    theme(axis.text.x = element_markdown(angle=25, hjust=0,
-                                         face='bold', size=10.5,
-                                         colour = xlab.colours),
-          axis.text.y = element_markdown(hjust=1, face='bold', size=12),
-          axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          legend.title = element_markdown(hjust=0.5, vjust=0.75),
-          legend.direction = 'horizontal',
-          legend.position = 'bottom',
-          panel.grid = element_blank(),
-          panel.border = element_rect(linewidth = 1))
-  return(p)
-}
-```
-
 ```{r, fig.width=20}
-p <- layer.heatmap2(genehm.df, arr='celltype')
+p <- layer.heatmaph(genehm.df, arr='celltype')
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
   theme(plot.margin = margin(r = 25))
 ```
+
+```{r, fig.width=20}
+p <- layer.heatmaph(genehm.df, cluster=TRUE)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 25))
+```
+
+
+```{r, fig.height = 20}
+p <- layer.heatmapv(genehm.df, cluster=TRUE)
+p + geom_vline(aes(xintercept=3.5), linewidth = 0.5)
+suppressMessages(ggsave('marker_heatmap.pdf', plot = last_plot(), device = 'pdf',
+                        path = figdir, dpi = 300))
+```
+
