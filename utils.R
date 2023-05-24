@@ -19,19 +19,64 @@
 
 
 
-# +-------------------------------------------------------------+
-# |  4 Visualisation ...                   |
-# +-------------------------------------------------------------+
+### +-------------------------------------------------------------+
+### |  4 Visualisation: Gene Sets                                 |
+### +-------------------------------------------------------------+
+
+# extract genes with abs(log2FC)
+extract_regulated_sets <- function(list_of_degs, names_degs, fc_thresh=1.5) {
+  # fc_thresh must be a positive number
+  # list_of_degs is a list of dataframes
+  # names_degs is a list of strings
+  # they must have the same length
+  reg_lvl <- paste0(' reg@log~2~FC≥', fc_thresh)
+  breaks <- brk_manual(c(-fc_thresh, fc_thresh), left_vec = c(FALSE, TRUE))
+  regulated_sets <- NULL
+  for (l in 1:length(list_of_degs)) {
+    degs_na <- dplyr::select(list_of_degs[[l]], c(log2FoldChange, padj, ensemblGeneID))
+    # better not pass NAs to kiru
+    degs <- na.omit(degs_na)
+    # filter by log2FC threshold
+    degs$reg <- 
+      kiru(
+        degs$log2FoldChange,
+        breaks = breaks,
+        extend = TRUE,
+        labels=c("down", "non", "up")
+      )
+    # filter by p-val
+    degs$reg <- as.character(degs$reg)
+    x <- 1:nrow(degs)
+    degs$reg <- ifelse(degs[x,'padj']<0.5, degs[x,'reg'], 'non')
+    # recover NAs as non-regulataed
+    added_nas <- degs_na[!(rownames(degs_na) %in% rownames(na.omit(degs_na))),]
+    added_nas$reg <- 'non'
+    degs <- rbind(degs, added_nas)
+    # store reg status
+    #rownames(degs) <- degs$ensemblGeneID
+    degs[ , names_degs[[l]] ] <- degs$reg
+    regulated_sets[[l]] <- dplyr::select(degs, c(ensemblGeneID, names_degs[[l]]) )
+  }
+  regulated_sets <- purrr::reduce(regulated_sets, full_join, by='ensemblGeneID')
+  rownames(regulated_sets) <- regulated_sets$ensemblGeneID
+  regulated_sets <- dplyr::select(regulated_sets, -ensemblGeneID)
+  return(regulated_sets)
+}
+
+get_deg_logical <- function(regs, direction){
+  # direction must be 'up' or 'down'
+  # regs is the output of `extract_regulated_sets`
+  deg_logical_set <- (regs == direction)[
+    ( rowSums(regs==direction)!=0 ), 
+  ]
+  return(deg_logical_set)
+}
 
 
 
-
-
-
-
-# +-------------------------------------------------------------+
-# |  5 Visualisation with scatter plots (MA).                   |
-# +-------------------------------------------------------------+
+### +-------------------------------------------------------------+
+### |  5 Visualisation with scatter plots (MA).                   |
+### +-------------------------------------------------------------+
 
 
 # classify lists of genes as up/non/down-regulated
@@ -330,9 +375,9 @@ ggmaplot3 <- function(deg, markers, fc_thresh = 1.5,
 }
 
 
-# +-------------------------------------------------------------+
-# |  6-1 Gene Set over-representation/enrichment.               |
-# +-------------------------------------------------------------+
+### +-------------------------------------------------------------+
+### |  6-1 Gene Set over-representation/enrichment.               |
+### +-------------------------------------------------------------+
 
 
 # To get a differentially expressed gene set for Over-Representation Analysis
@@ -415,6 +460,9 @@ gseCP_summarise <- function(gmx, gseCP_list, conditions, sets.as.factors, cluste
       df_bycondition <- lapply(unique(df$ID),
                                \(x) filter(df, ID==x) )[unlist(sign_lgl)]
       df <- bind_rows(df_bycondition)
+      # to avoid passing on non-filtered terms
+      df$ID <- as.character(df$ID)
+      levels(df$ID) <- factor(unique(df$ID))
   }
   return(df)
 }
@@ -599,6 +647,7 @@ handled_pathview <- function(params) {
     }
   )
 }
+
 
 ###
 ### 7

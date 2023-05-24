@@ -11,25 +11,19 @@ output:
     theme: readable
     df_print: paged
 ---
+```{r setup+theme, echo = FALSE, cache = FALSE, include = FALSE}
+ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
+knitr::opts_chunk$set(dev = 'png', 
+                      fig.align = 'center', fig.height = 7, fig.width = 8.5, 
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path='output/figures/', warning=FALSE, message=FALSE)
+```
 
 
 # Analysis of DESeq2 results with gene set enrichment
 
 
-## 0 Boilerplate
-
-```{r set-publication-theme, echo=FALSE, cache=FALSE}
-ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
-```
-
-```{r setup, echo = FALSE, cache = FALSE}
-knitr::opts_chunk$set(dev = 'png', 
-                      fig.align = 'center', fig.height = 7, fig.width = 8.5, 
-                      pdf.options(encoding = "ISOLatin9.enc"),
-                      fig.path='GSEA_customlists/figures/', warning=FALSE, message=FALSE)
-```
-
-**Libraries and external code:**
+**Libraries/utils:**
 ```{r load_libraries, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
 # data
@@ -168,12 +162,28 @@ daKD_gse_dutta_gtr   <- importCP(daKD_gse_dutta, type = 'gsea')
 daOE_gse_dutta_gtr   <- importCP(daOE_gse_dutta, type = 'gsea')
 dadaOE_gse_dutta_gtr <- importCP(dadaOE_gse_dutta, type = 'gsea')
 scOE_gse_dutta_gtr   <- importCP(scOE_gse_dutta, type = 'gsea')
+```
 
+```{r enrichment-score-front-plots}
+
+genes2show <- c('pros', 'poxn', 'mira', 'spdo', 'polo', 'cdk1', 'Myo31DF', 'ck', 'nub', 'sti', 'Mcm2', 'Orc2', 'Mcm7', 'Mcm5', 'aurB', 'Mcm6', 'Ndc80', 'PolE2', 'BubR1', 'betaTry', 'iotaTry', 'alphaTry', 'AstA', 'Mip', 'AstB', 'AstC', 'tk', 'dimm', 'tap', 'Dl', 'Poxn', 'Dh31')
+
+pdf(file=file.path(figdir,'DuttaNESdada.pdf'),
+     width=6, height=4.5)
+plotGSEA(dadaOE_gse_dutta_gtr,
+         plot_type = "classic",
+         show_pathway = c("EE-only", "ISC-only"),
+         show_gene = genes2show)
+dev.off()
+
+
+pdf(file=file.path(figdir,'DuttaNESscute.pdf'),
+     width=6, height=4.5)
 plotGSEA(scOE_gse_dutta_gtr,
          plot_type = "classic",
-         show_pathway = scOE_gse_dutta_gtr$gsea_df$ID[1:2],
-         #show_gene = scOE_gse_dutta_gtr$genelist[seq(1, by=10, length=2),'ID']
-         show_gene = c('da', 'sc', 'emc', 'pros', 'poxn', 'Myo31DF', 'ck', 'nub', 'pdm2', 'esg', 'Dl'))
+         show_pathway = c("EE-only", "ISC-only"),
+         show_gene = genes2show)
+dev.off()
 ```
 
 #### Layered heatmap to display NES across conditions and sets
@@ -195,10 +205,15 @@ layerhm.df <- gseCP_summarise(dutta_gmx, gse_list, conditions, sets.as.factors,
 subt <- "for cell-type specific gene sets (Dutta et al., 2015)"
 p <- layer.heatmap(layerhm.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
-  theme(plot.margin = margin(r = 0))
+  theme(plot.margin = margin(r = 25))
 ```
 
-
+```{r}
+pdf(file=file.path(figdir,'DuttaGSEA.pdf'),
+     width=5, height=4)
+p
+dev.off()
+```
 ### 2.2 RNAi screen phenotypes (Zeng et al., 2015)
 
 
@@ -255,6 +270,13 @@ subt <- "for RNAi-induced phenotypic class gene sets (Zeng et al., 2015)"
 p <- layer.heatmap(layerhm.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
   theme(plot.margin = margin(r = 0))
+```
+
+```{r}
+pdf(file=file.path(figdir,'ZengGSEA.pdf'),
+     width=5, height=4)
+p
+dev.off()
 ```
 
 #### GSEA plots
@@ -399,7 +421,7 @@ scOE_gse_glad <- readRDS('output/scOE_gse_glad.RDS')
 
 
 First to produce the dataframes for `ggplot2`:
-```{r create_dfs_for_NESheatmap_GLAD, fig.width=16}
+```{r create_dfs_for_NESheatmap_GLAD, fig.width=12}
 gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
 # `conditions` were defined further above
 sets.as.factors <- unique(glad_gmx$term)
@@ -409,7 +431,23 @@ layerhm.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors,
 subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
 p <- layer.heatmap(layerhm.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
-  theme(plot.margin = margin(r = 100))
+  theme(plot.margin = margin(r = 120))
+
+ggsave(file.path(figdir,'GSEA_GLAD1.pdf'))
+```
+```{r create_dfs_for_NESheatmap_GLAD2, fig.width=12}
+gse_list <- list(scOE_gse_glad, dadaOE_gse_glad, daOE_gse_glad, daKD_gse_glad)
+# `conditions` were defined further above
+sets.as.factors <- unique(glad_gmx$term)
+layerhm.df <- gseCP_summarise(glad_gmx, gse_list, conditions, sets.as.factors,
+                              cluster = TRUE, nsig.out = FALSE)
+
+subt <- "for Gene List Annotation for Drosophila gene sets (Hu et al., 2015)"
+p <- layer.heatmap(layerhm.df, subt)
+p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
+  theme(plot.margin = margin(r = 120))
+
+ggsave(file.path(figdir,'GSEA_GLAD2.pdf'))
 ```
 
 #### GSEA and layered heatmaps for GLAD sub.terms 
@@ -470,6 +508,7 @@ p_list <- lapply(
 And to visualise:
 ```{r subsets_glad_hm_2}
 p_list[[2]]
+ggsave(file.path(figdir,'GSEA_hedgehog.pdf'))
 ```
 
 ```{r subsets_glad_hm_1}
@@ -484,6 +523,7 @@ p_list[[3]]
 
 ```{r subsets_glad_hm_4}
 p_list[[4]]
+ggsave(file.path(figdir,'GSEA_enzymes.pdf'))
 ```
 
 ```{r subsets_glad_hm_5}
@@ -492,10 +532,12 @@ p_list[[4]]
 
 ```{r subsets_glad_hm_6}
 p_list[[6]]
+ggsave(file.path(figdir,'GSEA_DNAbind.pdf'))
 ```
 
 ```{r subsets_glad_hm_7}
 p_list[[7]]
+ggsave(file.path(figdir,'GSEA_transportclass.pdf'))
 ```
 
 #### GSEA and layered heatmaps for GLAD sub.sub.terms 
@@ -545,18 +587,22 @@ p2_list <- lapply(
 
 ```{r subsubs_glad_hm_1}
 p2_list[[1]]
+ggsave(file.path(figdir,'GSEA_signalingmols.pdf'))
 ```
 
 ```{r subsubs_glad_hm_2}
 p2_list[[2]]
+ggsave(file.path(figdir,'GSEA_collagens.pdf'))
 ```
 
 ```{r subsubs_glad_hm_3}
 p2_list[[3]]
+ggsave(file.path(figdir,'GSEA_TFtype.pdf'))
 ```
 
 ```{r subsubs_glad_hm_4}
 p2_list[[4]]
+ggsave(file.path(figdir,'GSEA_transporter.pdf'))
 ```
 
 NAs are probably due to small groups where the members are simply not detected in the DEG set.

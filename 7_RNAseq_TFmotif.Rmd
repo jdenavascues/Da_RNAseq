@@ -19,7 +19,7 @@ ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
 knitr::opts_chunk$set(dev = 'png', 
                       fig.align = 'center', fig.height = 7, fig.width = 8.5, 
                       pdf.options(encoding = "ISOLatin9.enc"),
-                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+                      fig.path='output/figures/', warning=FALSE, message=FALSE)
 ```
 
 **Libraries needed:**
