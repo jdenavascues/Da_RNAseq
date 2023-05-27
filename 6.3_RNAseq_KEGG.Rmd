@@ -215,7 +215,7 @@ p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
 ```
 
 Now _metabolic_ pathways:
-```{r create_dfs_for_NESheatmap_met}
+```{r create_dfs_for_NESheatmap_met, fig.width = 12}
 gse_list <- list(scOE_gse_kmet, dadaOE_gse_kmet, daOE_gse_kmet, daKD_gse_kmet)
 # `conditions` were defined further above
 sets.as.factors <- unique(kegg.met_tidy$description)
@@ -225,6 +225,8 @@ subt <- "for KEGG *metabolic* pathways"
 p <- layer.heatmap(layerhm.df, subt)
 p + geom_hline(aes(yintercept=3.5), linewidth = 0.5) +
   theme(plot.margin = margin(r = 200))
+
+ggsave(file.path(figdir, 'metabolicKEGG.pdf'))
 ```
 
 #### Pathway plots

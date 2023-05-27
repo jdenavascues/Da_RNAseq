@@ -347,3 +347,16 @@ suppressMessages(ggsave('marker_heatmap.pdf', plot = last_plot(), device = 'pdf'
                         path = figdir, dpi = 300))
 ```
 
+```{r}
+Espl.df <- bind_rows(ScOE_deg, DaDaOE_deg, DaOE_deg, DaKD_deg) %>%
+  dplyr::select(ensemblGeneID, gene_symbol, log2FoldChange, padj, condition) %>%
+  rename(p.adjust = padj) %>%
+  filter(grepl("^E\\(spl\\)", gene_symbol)) %>%
+  mutate(condition = factor(condition, levels=c("*scute*", "*da:da*", "*da*", "*da^RNAi^*"))) %>%
+  mutate(cellcolour = "#000000")
+
+p <- layer.heatmapv(Espl.df, cluster=TRUE)
+p + geom_vline(aes(xintercept=3.5), linewidth = 0.5)
+suppressMessages(ggsave('Esplit_heatmap.pdf', plot = last_plot(), device = 'pdf',
+                        path = figdir, dpi = 300))
+```
