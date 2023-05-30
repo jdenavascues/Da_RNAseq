@@ -1,8 +1,8 @@
 ---
-title: "RNAseq analysis of FAC-sorted ISC/EBs with LOF/GOF treatment for Sc/Da"
-description: "DEG analysis based on DESeq2 and GSEA"
+title: "1. RNAseq analysis of FACS-purified ISC/EBs expressing da^RNAi^, da, da:da or sc"
+description: "DGE analysis based on DESeq2"
 principal investigator: "Joaquín de Navascués"
-researcher: "Aleix Puig, modified by Joaquín de Navascués"
+researchers: "Jerome Korzelius, Aleix Puig-Barbé, Joaquín de Navascués"
 output: 
   html_document:
     toc: true
@@ -12,22 +12,19 @@ output:
     df_print: paged
     css: doc.css
 ---
-```{r set-publication-theme, echo=FALSE, cache=FALSE}
+```{r setup, echo=FALSE, cache=FALSE}
 ggplot2::theme_set(ggpubr::theme_pubr(base_size=10))
-```
-
-```{r setup, echo = FALSE, cache = FALSE}
 knitr::opts_chunk$set(dev = 'png', 
                       fig.align = 'center', fig.height = 7, fig.width = 8.5, 
                       pdf.options(encoding = "ISOLatin9.enc"),
-                      fig.path='integration/figures/', warning=FALSE, message=FALSE)
+                      fig.path='notebook_figs/', warning=FALSE, message=FALSE)
 ```
 
 
-# 1 Getting ready
+# 1 Preparation
 
 
-**Libraries needed:**
+**Libraries:**
 ```{r load_libraries, warning=FALSE}
 if (!require("librarian")) install.packages("librarian")
 librarian::shelf(
@@ -37,7 +34,6 @@ librarian::shelf(
   ggplot2, pheatmap, scico, dendsort,
   # convenience
   here, writexl, gzcon)
-setwd(here())
 ```
 
 **Set working directory where the script is**

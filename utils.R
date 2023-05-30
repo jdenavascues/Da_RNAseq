@@ -1,8 +1,12 @@
 # +-------------------------------------------------------------+
-# |  1 Differential gene expression.                            |
+# |  1 Differential gene expression                             |
 # +-------------------------------------------------------------+
 
 
+# To calculate Transcripts Per Million counts
+#tpm <- function(counts, lengths) {
+#  return ((counts * 1e6) / (lengths * sum(counts/lengths,na.rm=TRUE)))
+#}
 
 
 # +-------------------------------------------------------------+
