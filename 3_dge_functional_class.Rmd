@@ -34,7 +34,7 @@ librarian::shelf(
   # bioinformatics
   org.Dm.eg.db, biomaRt, DOSE, fgsea, clusterProfiler, gage,
   # plotting
-  ggh4x, ggtheme, ggtext, ggrepel, ggnewscale,
+  ggh4x, ggthemes, ggtext, ggrepel, ggnewscale,
   enrichplot, genekitr, pathview,  cetcolor, patchwork,
 # convenience
   here)
@@ -480,6 +480,23 @@ scOE_kegg_rank <- scOE_kegg_rank[-na.action(na.omit(names(scOE_kegg_rank)))]
 # GSEA
 scOE_gse_kmet   <- do.call(GSEA, c(list(geneList=scOE_kegg_rank),   GSEAparams_met))
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #### Layered heatmaps
 
