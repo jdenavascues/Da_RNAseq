@@ -1,6 +1,6 @@
 ---
-title: "3. Functional classification of differentially expressed genes"
-description: "GSEA of custom lists and KEGG metabolic pathways"
+title: "4. DNA motif enrichment in differentially expressed genes"
+description: "RCisTarget analysis of DEGs"
 principal investigator: "Joaquín de Navascués"
 researchers: "Joaquín de Navascués"
 output: 
@@ -27,16 +27,14 @@ knitr::opts_chunk$set(dev = 'png',
 **Libraries/utils:**
 ```{r libraries, warning=FALSE, message=FALSE}
 if (!require("librarian")) install.packages("librarian")
-# data
 librarian::shelf(
   # tidyverse
-  dplyr, tidyr, stringr, purrr,
-  # bioinformatics
-  org.Dm.eg.db, biomaRt, DOSE, fgsea, clusterProfiler, gage,
+  dplyr, stringr, tidyr,
+  # data
+  data.table, DT, RcisTarget,
   # plotting
-  ggh4x, ggtheme, ggtext, ggrepel, ggnewscale,
-  enrichplot, genekitr, pathview,  cetcolor, patchwork,
-# convenience
+  ggtheme, ggtext, ggrepel, RColorBrewer, cetcolor, hrbrthemes,
+  # convenience
   here)
 
 if(!exists("gseCP_summarise", mode="function")) source("utils.R")
@@ -68,33 +66,14 @@ figdir <- paste0(c(head(str_split(getwd(),'/')[[1]],-1),
 dir.create(figdir, showWarnings = FALSE)
 ```
 
-Load DGE data from `DESeq2`:
-```{r load_DEG_data}
-# experimental design and labels
-targets <- readRDS('output/targets.RDS')
-# DEG data
-DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
-DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
-DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
-ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
-```
+
+# 2 Identification of enriched DNA binding motifs in DEGs
 
 
-
-###
-###
-###
+## 2.1 Load the data
 
 
-
-# Analysis of DESeq2 results with RcisTarget
-
-
-## 1 Load the data
-
-
-### 1.1 DEG data
-
+#### Differential gene expression data
 
 This gets us the DGE data from `DESeq2`, identified by FlyBase/Ensembl ID and gene symbol:
 ```{r load_DEG_data}
@@ -103,14 +82,10 @@ DaKD_deg <- readRDS('output/Control_vs_DaKD.RDS')
 DaOE_deg <- readRDS('output/Control_vs_DaOE.RDS')
 DaDaOE_deg <- readRDS('output/Control_vs_DaDaOE.RDS')
 ScOE_deg <- readRDS('output/Control_vs_ScOE.RDS')
-head(
-  ScOE_deg %>% dplyr::select(gene_symbol, ensemblGeneID, baseMean, log2FoldChange, padj),
-  3
-)
 ```
 
-Now we can define the gene sets as up/down-regulated with our _UAS-x_ transgenes:
-```{r}
+Gene sets of up/down-regulated in our experiments for a given fold-change threshold `fc_thresh`:
+```{r get_degs}
 # gene list by condition and up/downregulated
 geneLists <- list(
   daRNAi_dn = make_degset(DaKD_deg, up=FALSE, fc_thresh=1.5)$gene_symbol,
@@ -122,30 +97,26 @@ geneLists <- list(
   scOE_dn = make_degset(ScOE_deg, up=FALSE, fc_thresh=1.5)$gene_symbol,
   scOE_up = make_degset(ScOE_deg, up=TRUE, fc_thresh=1.5)$gene_symbol
 )
-head(geneLists$daRNAi_dn)
 ```
 
+#### DNA motif databases
 
-### 1.2 Motif databases
+To run `RCisTarget` I need two databases (motif Rankings and Annotations). The [Stein Aerts' lab website](https://resources.aertslab.org/cistarget/) has both of them available for the _D. melanogaster_ release 6.02:
 
-
-Now we need the motif Rankings and Annotations, from the [Stein Aerts' lab website](https://resources.aertslab.org/cistarget/).
-Matching them correctly is a bit confusing to me, so I first look carefully at the different options:
-I download for _D. melanogaster_ release 6.02:
-
-- VERSION 8 (NEW)
+- Version 8 "new":
 
   - [Motif rankings `.feather` file v8](https://resources.aertslab.org/cistarget/databases/drosophila_melanogaster/dm6/flybase_r6.02/mc8nr/gene_based/dm6-5kb-upstream-full-tx-11species.mc8nr.genes_vs_motifs.rankings.feather) (782Mb) 
   - [Motif annotation table file v8](https://resources.aertslab.org/cistarget/motif2tf/motifs-v8-nr.flybase-m0.001-o0.0.tbl) (40Mb)
 
-- VERSION 10
+- Version 10:
 
   - [Motif rankings `.feather` file v10](https://resources.aertslab.org/cistarget/databases/drosophila_melanogaster/dm6/flybase_r6.02/mc_v10_clust/gene_based/dm6_v10_clust.genes_vs_motifs.rankings.feather) (47Mb) 
   - [Motif annotation table file v10](https://resources.aertslab.org/cistarget/motif2tf/motifs-v10nr_clust-nr.flybase-m0.001-o0.0.tbl) (69Mb)
 
 
-Load the different motif Annotations (mA) and motif Rankings (mR)
-```{r}
+Download the different motif Annotations (mA) and motif Rankings (mR)
+```{r get_motif_db}
+# define URLs
 rkURLbase <- paste0('https://resources.aertslab.org/cistarget/databases/',
                    'drosophila_melanogaster/dm6/flybase_r6.02')
 rk_v8_url <- paste0(rkURLbase, '/mc8nr/gene_based/',
@@ -160,10 +131,8 @@ an_v10_url <- paste0('https://resources.aertslab.org/cistarget/motif2tf/',
 # establish the resource sub-directory
 motifpath <- paste0(getwd(), "/resources/motifdbs")
 if (!dir.exists( motifpath )) dir.create(motifpath)
-# read (or download, if the first time) the rankings and annotations 
-```
 
-```{r}
+# read (or download, if the first time) the rankings and annotations 
 tryCatch(
   { motif_annotations_dm6_v8 <- readRDS(paste0(motifpath, "/motif_annotations_dm6_v8.RDS")) },
   error = function(e) {
@@ -222,13 +191,12 @@ motif_rankings_dm6_v8@rankings <- dplyr::relocate(motif_rankings_dm6_v8@rankings
 ```
 
 
-## 2 Perform motif enrichment with `RcisTarget`
+## 2.2 Perform motif enrichment with `RcisTarget`
 
 
-### 2.1 Run with the two versions of the motif annotations
+#### Matching motif rankings and annotations
 
-
-Now I need to see how many motifs are there per database:
+The way the motif databases are organised at the Stein Aerts' lab resource website, it seems that each version of the motif rankings database should be used with their corresponding annotation database. However, the (`RCisTarget` manual)[https://bioconductor.org/packages/release/bioc/manuals/RcisTarget/man/RcisTarget.pdf] states that "[The] annotation database [...] motif [...] names should match the ranking column names." To explore what is the best option, I want to see how many motifs are there per database:
 ```{r}
 motif.table <- data.frame(
   motif_annot = c(length(unique(motif_annotations_dm6_v8$motif)), length(unique(motif_annotations_dm6_v10$motif))),
@@ -238,7 +206,25 @@ rownames(motif.table) <- c('8new', '10cls')
 motif.table
 ```
 
-So it seems that the combination with more possibilities is to match the v8 motif ranks with the v10 annotation -- the website recommends the opposite, but it is also true that this is in the context of the pySCENE pipeline, which is to build networks with scRNAseq data.
+It seems that the combination with more possibilities is to match the v8 motif ranks with the v10 annotation. Moreover, we will see later that the motif annotations is richer if we combine the two anotation databases. So I will run `RCisTarget` once with the two db in version 8, and one with a v8 rank and v10 annotation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Let's see what we get with a simple comparison:
 ```{r}
@@ -259,7 +245,7 @@ tryCatch(
 ```
 
 
-### 2.2 Merge the association with TFs
+# 3 Merge the association with TFs
 
 
 On inspection of the results, most of the information is contained in the 'pure v8' dataframe, whereas the 'hybrid v8-v10' is mostly redundant - but not fully. So I will simply merge them (the connection between motifs and TFs should not depend on how the databases were assembled and the criteria for inclusion is the same).

@@ -560,6 +560,7 @@ import_from_gmx <- function(gmxfile) {
   return(df)
 }
 
+# To prepare GSEA results for plotting as layered heatmaps.
 gseCP_summarise <- function(gmx, gse_list, conditions, sets.as.factors, cluster=FALSE, nsig.out=FALSE) {
   # purr::map to convert the gse_list from S4 objects to their @result slots 
   gseCP_list <- map( gse_list, \(x) dplyr::select(x@result, NES, p.adjust, ID) )
@@ -596,77 +597,6 @@ gseCP_summarise <- function(gmx, gse_list, conditions, sets.as.factors, cluster=
   }
   return(df)
 }
-
-## Extract data from a list of gse objects from clusterProfiler into a single df
-## gmx is a df containing the data of a GMX file
-## gseCP_list is a list of clusterProfiler GSEA objects
-## conditions is a list with the names of the experimental conditions for those GSEA objects
-## dvar (data variable) for "name injection" with <data-masking> tidyverse functions
-# gseCP_summarise_old <- function(gmx, gseCP_list, conditions, sets.as.factors, dvar, cluster=FALSE, nsig.out=FALSE) {
-#   if ( !(dvar %in% c('NES', 'p.adjust')) ) {
-#     stop("The argument `dvar` must be one of `NES` and `p.adjust`")
-#   }
-#   # create template with all term IDs (clusterProfiler trims those that do not give results)
-#   empty <- data.frame(rep(0, length(unique(gmx$term))),
-#                       unique(gmx$term))
-#   names(empty) <- c(dvar, 'ID')
-#   # create function to merge `empty` with GSE object data for each term ID
-#   gsemerge <- function(gse, empty, dvar) {
-#     return(
-#       # full join selecting injecting dvar with
-#       # embracing syntax {{}}
-#       # bangbang !! operator with as.name function
-#       # glue syntax "{}"
-#       # dynamic assignment :=
-#       full_join(dplyr::select(gse, all_of({{dvar}}), ID), empty, by='ID') %>%
-#         mutate( "{dvar}" := !!as.name(paste0(dvar,".x")) ) %>%
-#         dplyr::select( {{dvar}}, ID )
-#     )
-#   }
-#   # purr::map to convert the gse_list from S4 objects to their @result slots 
-#   gseCP_list <- map(gseCP_list, \(x) x@result)
-#   # apply gsemerge
-#   gseCP_list <- lapply( gseCP_list, \(x) gsemerge(x, empty, dvar) )
-#   # name them to associate conditions with the data
-#   names(gseCP_list) <- conditions
-#   df <- gseCP_list %>%
-#     # change the colnames to condition names
-#     imap(.x = ., ~ set_names(.x, c(.y, "ID"))) %>%
-#     # merge them all together
-#     purrr::reduce(full_join, by='ID') %>%
-#     # tidy up all dvar values in one col
-#     pivot_longer(cols=-c('ID'), names_to = "condition", values_to = dvar)
-#   df$condition <- factor(df$condition, levels = conditions)
-#   df$ID <- factor(df$ID, levels = sets.as.factors)
-#   # apply clustering
-#   if (cluster & length(sets.as.factors)>2) { # `hclust` must have n >= 2 objects to cluster
-#     if (dvar != 'NES') warning("Clustering is intended for enrichment scores, not p-values")
-#     vectors <- df %>%
-#       pivot_wider(names_from = condition, values_from = {{dvar}}) %>%
-#       mutate_all(replace_na, 100)
-#     clust <- hclust(dist(as.matrix(vectors[2:length(gseCP_list)])))
-#     df$ID <- factor(df$ID, levels=vectors$ID[clust$order])
-#   } else if (cluster & length(sets.as.factors < 3)) {
-#     warning("`hclust` must have n >= 2 objects to cluster. NES columns will not be clustered.")
-#   }
-#   # apply filtering
-#   if (nsig.out) {
-#     if (dvar=='p.adjust') {
-#       # get the IDs for which there is at least one condition with significant enrichment
-#       sign_lgl <- lapply( lapply(unique(df$ID),
-#                                  \(x) filter(df, ID==x)),
-#                           \(x) any(x$p.adjust<0.05) )
-#       df_bycondition <- lapply(unique(df$ID),
-#                                \(x) filter(df, ID==x) )[unlist(sign_lgl)]
-#       df <- bind_rows(df_bycondition)
-#     }
-#     if (dvar=='NES') {
-#       
-#     }
-#     
-#   }
-#   return(df)
-# }
 
 # create a heatmap with NES in colour and coloured point as padj.
 layer.heatmap <- function(layerhm.df, subt) {
