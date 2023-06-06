@@ -1,30 +1,5 @@
-# +-------------------------------------------------------------+
-# |  1 Differential gene expression                             |
-# +-------------------------------------------------------------+
-
-
-# To calculate Transcripts Per Million counts
-#tpm <- function(counts, lengths) {
-#  return ((counts * 1e6) / (lengths * sum(counts/lengths,na.rm=TRUE)))
-#}
-
-
-# +-------------------------------------------------------------+
-# |  2 Visualisation ...                   |
-# +-------------------------------------------------------------+
-
-
-
-
-# +-------------------------------------------------------------+
-# |  3 Visualisation ...                   |
-# +-------------------------------------------------------------+
-
-
-
-
 ### +-------------------------------------------------------------+
-### |  4 Visualisation: Gene Sets                                 |
+### |  Visualisation: Gene Sets                                   |
 ### +-------------------------------------------------------------+
 
 # extract genes with abs(log2FC)
@@ -77,9 +52,8 @@ get_deg_logical <- function(regs, direction){
 }
 
 
-
 ### +-------------------------------------------------------------+
-### |  5 Visualisation with scatter plots (MA).                   |
+### |  Visualisation: MA plots                                    |
 ### +-------------------------------------------------------------+
 
 
@@ -506,7 +480,7 @@ layer.heatmapv <- function(genehm.df, cluster=FALSE, arr=NULL) {
 
 
 ### +-------------------------------------------------------------+
-### |  6-1 Gene Set over-representation/enrichment.               |
+### |  Gene Set Enrichment Analysis                               |
 ### +-------------------------------------------------------------+
 
 
@@ -684,31 +658,114 @@ subglad_gsea <- function(deg, gmx, perms=1000) {
 }
 
 
-###
-### 6-2
-###
+### +-------------------------------------------------------------+
+### |  DNA motif enrichment                                       |
+### +-------------------------------------------------------------+
 
 
+class.swarm <- function(df, # dataframe
+                        categories, examples, values, labels, # data variables
+                        dotparams, palette, texts, emp.ratio=38/64) { # plot variables
+  
+  # prepare for ggplot evaluation
+  categories_s <- ensym(categories)
+  examples_s   <- ensym(examples)
+  values_s     <- ensym(values)
+  labels_s     <- ensym(labels)
 
+  # unravel parameter bundles
+  binwidth <- dotparams$binwidth
+  dotsize  <- dotparams$dotsize
+  alpha    <- dotparams$alpha
+  stroke   <- dotparams$stroke
+  x_label      <- texts$x_label
+  target_class <- texts$target_class
+  obj.regex    <- texts$tfs.regex
+  obj.var      <- texts$tfs.var
+  obj.sel      <- texts$tfs.select
+  
+  # get the beeswarm
+  p <- ggplot(df, aes(x=!!categories_s, y=!!values_s, fill=!!labels_s, colour=!!labels_s)) + 
+    geom_dotplot(binaxis     ='y',
+                 stackdir    ='center',
+                 stackgroups = TRUE,
+                 method      = 'histodot',
+                 binwidth    = binwidth,
+                 dotsize     = dotsize,
+                 alpha       = alpha,
+                 stroke      = stroke) +
+    scale_fill_manual(name   = '',
+                      breaks = levels( df[, {{labels}}] ),
+                      values = palette,
+                      labels = levels( df[, {{labels}}] ),
+                      guide  = guide_legend(nrow = 1)) +
+    scale_colour_manual(name   = '',
+                        breaks = levels( df[, {{labels}}] ),
+                        values = palette,
+                        labels = levels( df[, {{labels}}] ),
+                        guide  = guide_legend(nrow = 1)) +
+    xlab(x_label) +
+    theme(axis.text.x     = element_markdown(face = 'bold', size = 10),
+          aspect.ratio    = 0.5,
+          legend.position = 'bottom')
 
-###
-### 6-3
-###
-
-handled_pathview <- function(params) {
-  withCallingHandlers(
-    do.call ( pathview, c(params, kegg.native = FALSE) ),
-    message = function(m) {
-      if( length(grep('Try \"kegg.native=T\" instead!', m$message))==1) {
-        cat('OK, I will try that\n')
-        do.call ( pathview, c(params, kegg.native = TRUE) )
-        cat('now it is done with native KEGG PNG\n>>>>> Ignore what comes below: <<<<<\n')
-      }
-    }
-  )
+  # prepare labels for specific genes
+  # using https://stackoverflow.com/questions/44991607
+  for (j in 1:length(obj.regex)) {
+    df <- df %>%
+      mutate('{obj.var[[j]]}' := if_else(
+        (str_detect( as.character( df[, examples] ), obj.regex[[j]] ) & !!labels_s==target_class),
+        obj.var[[j]], NA) )
+  }
+  df <- df %>%
+    unite('obj.labs', all_of(obj.var), sep = ', ', na.rm = TRUE, remove=FALSE)
+  
+  # get the lines of ggrepel text where we want:
+  built <- ggplot_build(p)
+  point.pos <- built$data[[1]]
+  size <- dev.size(units = 'px')
+  extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
+  bw <- point.pos$binwidth[[1]]
+  # por la cuenta de la vieja, al final
+  xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1] / extent[2]) * (emp.ratio)
+  ytext <- point.pos$y
+  
+  # add labels
+  p <- p +
+    # it would be helpful to allow user control of more parameters here
+    geom_text_repel(
+      # reindex - point.pos is organised by X values, then by FILL colour
+      # which equates to ordering obj.lab as X, then labels, then values
+      aes(label = arrange(df, {{categories}}, {{labels}}, {{values}})[, obj.sel[[1]] ] ,
+          x = xtext, y = ytext,
+          colour = arrange(df, {{categories}}, {{labels}}, {{values}})[, {{labels}}] ),
+      size = 3,
+      # general
+      max.overlaps = Inf,
+      # position
+      direction = 'both',
+      nudge_x = -0.25,
+      nudge_y = 1.5,
+      # segment
+      min.segment.length = 0,
+      segment.color = 'gray30',
+      segment.alpha = 0.75,
+      segment.size = 0.2) +
+    
+    # repeat, bc I don't know how to loop in ggplot2
+    geom_text_repel(
+      aes(label = arrange(df, {{categories}}, {{labels}}, {{values}})[, obj.sel[[2]] ] ,
+          x = xtext, y = ytext,
+          colour = arrange(df, {{categories}}, {{labels}}, {{values}})[, {{labels}}] ),
+      size = 3,
+      max.overlaps = Inf,
+      direction = 'both',
+      nudge_x = -0.25,
+      nudge_y = 1.5,
+      min.segment.length = 0,
+      segment.color = 'gray30',
+      segment.alpha = 0.75,
+      segment.size = 0.2) +
+  guides(fill = guide_legend(nrow=1), colour = guide_legend(nrow=1))
+  return(p)
 }
-
-
-###
-### 7
-###

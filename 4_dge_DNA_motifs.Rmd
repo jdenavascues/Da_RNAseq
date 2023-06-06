@@ -29,7 +29,7 @@ knitr::opts_chunk$set(dev = 'png',
 if (!require("librarian")) install.packages("librarian")
 librarian::shelf(
   # tidyverse
-  dplyr, stringr, tidyr,
+  dplyr, stringr, tidyr, rlang,
   # data
   data.table, DT, RcisTarget,
   # plotting
@@ -194,7 +194,7 @@ motif_rankings_dm6_v8@rankings <- dplyr::relocate(motif_rankings_dm6_v8@rankings
 ## 2.2 Perform motif enrichment with `RcisTarget`
 
 
-#### Matching motif rankings and annotations
+### 2.2.1 Match motif databases: rankings and annotations
 
 The way the motif databases are organised at the Stein Aerts' lab resource website, it seems that each version of the motif rankings database should be used with their corresponding annotation database. However, the (`RCisTarget` manual)[https://bioconductor.org/packages/release/bioc/manuals/RcisTarget/man/RcisTarget.pdf] states that "[The] annotation database [...] motif [...] names should match the ranking column names." To explore what is the best option, I want to see how many motifs are there per database:
 ```{r}
@@ -208,26 +208,11 @@ motif.table
 
 It seems that the combination with more possibilities is to match the v8 motif ranks with the v10 annotation. Moreover, we will see later that the motif annotations is richer if we combine the two anotation databases. So I will run `RCisTarget` once with the two db in version 8, and one with a v8 rank and v10 annotation.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Let's see what we get with a simple comparison:
 ```{r}
+# tryCatch statements are for reading the saved results
+# instead of calculating again, in case I want to re-run the script
+## "pure" v8 enrichment
 tryCatch(
   { motrich_pure8 <- readRDS(paste0(getwd(), "/output", "/motrich_pure8.RDS")) },
   error = function(e) {
@@ -235,6 +220,7 @@ tryCatch(
     saveRDS(motrich_pure8, paste0(getwd(), "/output", "/motrich_pure8.RDS"))
     }
 )
+## "hybrid" v8/v10 enrichment
 tryCatch(
   { motrich_hybr8 <- readRDS(paste0(getwd(), "/output", "/motrich_hybr8.RDS")) },
   error = function(e) {
@@ -244,12 +230,37 @@ tryCatch(
 )
 ```
 
+Now let us make sure that this is sound. We can test that the motif enrichment generated is exactly the same:
+```{r test_motif_ids}
+# are the columns listing the motif names identical?
+all(motrich_hybr8$motif == motrich_pure8$motif)
+```
 
-# 3 Merge the association with TFs
+And we can also see that even the enrichment values are exactly the same for every motif:
+```{r test_motif_nes}
+# are the enrichment score columns identical?
+all(motrich_hybr8$NES == motrich_pure8$NES)
+```
 
+Therefore, the only difference between the using the version 8 or 10 of the annotations is the nature of these, and in particular the association of motifs with their binding transcription factors:
+```{r motif_annot_comparison, message=FALSE, cols.print=3}
+head(
+  # combine the columns of both lists of motifs
+  # their rows will be naturally aligned, as the motif ranking is the same
+  dplyr::bind_cols(motrich_pure8, motrich_hybr8) %>%
+    # get the motif names and the annotations from both DBs
+    dplyr::select(2, c(starts_with('TF_highConf'))),
+  15)
+```
+
+It provides more information to merge the annotations, and since v8 has not been retired, it is safe to assume that it is not misleading to use it.
+
+### 2.2.2 Associate motifs with TF class
+
+#### Merge motif annotations v8 and v10
 
 On inspection of the results, most of the information is contained in the 'pure v8' dataframe, whereas the 'hybrid v8-v10' is mostly redundant - but not fully. So I will simply merge them (the connection between motifs and TFs should not depend on how the databases were assembled and the criteria for inclusion is the same).
-```{r}
+```{r merge-enriched-motif-annotations}
 motrich <- motrich_pure8 %>%
   # select only the data I am interested in from the pure v8 enrichment analysis
   dplyr::select(-c(TF_lowConf, rankAtMax, nEnrGenes)) %>%
@@ -266,17 +277,17 @@ motrich <- motrich_pure8 %>%
   mutate(TFs = str_split(TFs, '; '))
 # remove duplicate TFs
 motrich$TFs <- lapply(motrich$TFs, unique)
-head(motrich)
+head(motrich %>%
+       dplyr::select(c(motif, TFs)) %>%
+       rowwise() %>%
+       dplyr::mutate(TFs = paste(TFs, collapse=', ')),
+     15)
 ```
 
+####  Match TFs with protein families
 
-### 2.3 Associate TFs with TF class using FlyBase's Gene Groups
-
-
-#### Download the Gene Groups
-
-To assign to gene families, let's start by obtaining the gene family mapping from FlyBase:
-```{r, message=FALSE}
+**Download FlyBase Gene Groups**
+```{r, message=FALSE, warning=FALSE}
 geneg.source <- 'http://ftp.flybase.org/releases/FB2023_02/precomputed_files/genes/gene_group_data_fb_2023_02.tsv.gz'
 geneg <- data.table::fread(geneg.source)
 names(geneg)[[1]] <- 'FB_group_id'
@@ -287,25 +298,24 @@ nrow(geneg); head(geneg)
 
 Now we have a look at how the TFs in `geneg` and `motrich` match each other.
 
-#### Clean up the Gene Group list
-
-Let's start with how many TFs whose motifs were detected by `RcisTarget` do not have a Gene Group:
-```{r}
-# unique TF names excluding "" for motifs without a _Drosophila_ TF match
+**Find 'orphan' TFs**
+```{r get-unmatched-tfs}
+# unique TF names (excluding "") for motifs **without** a _Drosophila_ TF match
 detected.tfs <- unique(unlist(motrich$TFs))
 detected.tfs <- detected.tfs[ nchar(detected.tfs)>0 ]
 # TFs detected in RcisTarget but not present in the group member db:
 detected.tfs[!(detected.tfs %in% geneg$gene_symbol)]
 ```
 
-Of these:
+Some of these gene symbols need a bit of a cleanup:
 
 - _h_ is the usual name for _hairy_, which in FB (and therefore in `geneg`) is called _hry_ `-|>` change name in `geneg`
 - _CG14440_ and _CG14442_ are homologs of human _ZNF821_, a ZF-C2H2 factor (DIOPT) `-|>` add annotation to `geneg`
 - _ocm_ is homolog of human _TBX22_, a T-BOX factor (DIOPT) `-|>` add annotation to `geneg`
-- _NK71_ I can't find it, except in this db from the Aerts'lab and poster from the Stark's lab `-|>` remove from `motrich`
+- _NK71_ I can't find it, except in this db from the Aerts'lab and a poster from the Stark's lab `-|>` remove from `motrich`
 
-```{r}
+Effect changes:
+```{r cleanup-tf-names}
 # add needed gene group annotations
 geneg <- geneg %>%
   # change the symbol for _hairy_ from FB official 'hry' to standard 'h'
@@ -332,9 +342,9 @@ geneg <- geneg %>%
 motrich$TFs <- lapply(motrich$TFs, \(x) str_remove(x, 'NK71'))
 ```
 
-Now we can have a look at genes that have multiple matches in the gene groups:
-```{r}
-# TFs RcisTarget with multiple gene group memberships:
+**Find multi-family TFs**
+```{r tfs-multiple-fams, cols.print=4}
+# TFs 'found' by RcisTarget with multiple gene group memberships:
 multifam <- lapply(detected.tfs, function(x) nrow(filter(geneg, gene_symbol==x)))>1
 geneg %>%
   filter(gene_symbol %in% detected.tfs[multifam]) %>%
@@ -347,7 +357,7 @@ To clean this up, we can simply:
 - that will leave us with _Abd-B_, _Myb_, _ham_, _pb_, _sr_, _toy_, _zfh1_
 
 Make gene-specific filters:
-```{r}
+```{r get-tfs-multifam}
 double_parent_genes <- geneg %>%
   filter(gene_symbol %in% detected.tfs[multifam] & parent_symbol!='') %>%
   filter(geneg %>%
@@ -358,12 +368,14 @@ double_parent_genes <- geneg %>%
   dplyr::select(gene_symbol)
 double_parent_genes <- sort(unlist(double_parent_genes))
 names(double_parent_genes) <- NULL
-# discriminate manually ¯\_(ツ)_/¯ which row to keep:
-double_parent_symbol <- c("HOX-C", "KMT", "HTH", "HOX-C", "ULT", "HBTF", "ZN-TF")
+double_parent_genes
 ```
 
-Apply filters:
-```{r}
+**Apply corrections**
+```{r apply-multifam-corr}
+# discriminate manually ¯\_(ツ)_/¯ which row to keep:
+double_parent_symbol <- c("HOX-C", "KMT", "HTH", "HOX-C", "ULT", "HBTF", "ZN-TF")
+# apply changes
 geneg <- geneg %>%
   # remove the group associations that are multiple and without a parent_symbol
   filter( ! (gene_symbol %in% detected.tfs[multifam] & parent_symbol=='') ) %>%
@@ -386,9 +398,13 @@ motrich$TFclass <- lapply(motrich$TFs, \(x)
   # ... get all the different TF classes corresponding to those TFs
   unique( unlist( lapply( x, \(y) filter(geneg, gene_symbol==y)$group_symbol) ) )
   )
+# how many TF Classes we have to plot:
+length(unique(unlist(motrich$TFclass)))
 ```
 
-As some motifs can be bound by different classes of TFs, we have to do:
+Thirty-three is too many - colour mapping them will be very confusing.
+
+**Select the main TF class per enriched motif**
 ```{r}
 # before, I simply unnested `TFclass` to replicate motifs bound by different TF classes
 motrich$TFclass <- lapply(motrich$TFs, \(x)
@@ -411,7 +427,9 @@ motrich$TFmainClass[ sapply(motrich$TFmainClass, is.null) ] <- ''
 length(unique(motrich$TFmainClass))
 ```
 
-This is still too much for the plot. So I am going to simplify the list of different TF classes by hand:
+Thirty-one classes is still too much for the plot.
+
+**Coarse-grain the TF classes by hand**
 ```{r}
 # to map `geneg` descriptions to better, less abundant names:
 name2largeclass <- list(
@@ -464,27 +482,18 @@ motrich <- motrich %>%
 length(unique(motrich$TFLargeClass))
 ```
 
-Somewhat better, but I would like something like ~6-7 colours at most. So I will merge the groups with less than ~10 hits into one after the next step.
+Twenty-one is better, but I would like something like ~6-7 colours at most. So I will merge the groups with less than ~10 hits into one 'unclassified' group.
 
-
-## 3 Plot the results
-
-
-### 3.1 Beeswarm plot (dotplot)
-
-
-I want to create a categorical (by experimental condition) 'beeswarm' dot plot that shows the Y position of the dot as the NES value, and the class of TF as colour.
-
-The minimal datasets are:
+**Further reduce the number of TF classes considered, by strength of representation**
 ```{r}
-# genes up
+# enriched motif-binders for upregulated genes
 mots_up <- motrich %>%
   dplyr::select(c(TFs, geneSet, NES, TFLargeClass)) %>%
   filter(str_detect(geneSet, 'up'))
 mots_up$geneSet <- factor(mots_up$geneSet,
                           levels=c("daRNAi_up", "daOE_up", "dadaOE_up", "scOE_up"),
                           labels=c("*da^RNAi^*", "*da*", "*da:da*", "*scute*"))
-# genes down
+# enriched motif-binders for downregulated genes
 mots_dn <- motrich %>%
   dplyr::select(c(TFs, geneSet, NES, TFLargeClass)) %>%
   filter(str_detect(geneSet, 'dn'))
@@ -493,8 +502,9 @@ mots_dn$geneSet <- factor(mots_dn$geneSet,
                           labels=c("*da^RNAi^*", "*da*", "*da:da*", "*scute*"))
 ```
 
-To coarse-grain the TF classes:
+Rank the classes of _enriched motif-binder TFs_ by representation. (Get the top five, )
 ```{r}
+# top 5 enriched motif-binder classes in upregulated genes
 top5up <- mots_up %>%
   dplyr::count(TFLargeClass) %>%
   # remove '' and unclassified -- the latter have undue weight
@@ -503,12 +513,14 @@ top5up <- mots_up %>%
   tail(5) %>%
   select(TFLargeClass) %>% unlist()
 
+# group other classes into "Others"
 mots_up <- mots_up %>%
   mutate(TFcla6 = if_else(TFLargeClass %in% top5up, TFLargeClass, 'Others'))
 mots_up$TFcla6 <- factor(mots_up$TFcla6, levels=c(rev(top5up), 'Others'))
 indices <- lapply(unique(mots_up$geneSet), \(x) nrow(filter(mots_up, geneSet==x)):1 )
 mots_up$index <- unlist(indices)
 
+# top 5 enriched motif-binder classes in downregulated genes
 top5dn <- mots_dn %>%
   dplyr::count(TFLargeClass) %>%
   filter(nchar(TFLargeClass)>1 & TFLargeClass!='unclassified') %>%
@@ -516,6 +528,7 @@ top5dn <- mots_dn %>%
   tail(5) %>%
   select(TFLargeClass) %>% unlist()
 
+# group other classes into "Others"
 mots_dn <- mots_dn %>%
   mutate(TFcla6 = if_else(TFLargeClass %in% top5dn, TFLargeClass, 'Others'))
 mots_dn$TFcla6 <- factor(mots_dn$TFcla6, levels=c(rev(top5dn), 'Others'))
@@ -523,240 +536,35 @@ indices <- lapply(unique(mots_dn$geneSet), \(x) nrow(filter(mots_dn, geneSet==x)
 mots_dn$index <- unlist(indices)
 ```
 
-To plot:
-```{r dotplot_NES_TFclass, fig.width=4, fig.height=4}
+### 2.2.3 Plot motif-associated TF classes
+
+The best representation I can think of is a categorical beeswarm plot that shows the NES value against the experimental condition, with the class of TF as colour.
+
+This involves:
+
+- binning the NES values, to ofpack the dots in the swarm (automated by `ggplot2::geom_dotplot`)
+- identifying some TFs of interest (_da_ and members of the _ac/sc-_ and _E(spl)-_ Complexes): the wrapper `class.swarm` does that.
+
+**For motifs in upregulated genes**:
+```{r dotplot_NES_TFclass, warning=FALSE, fig.width=5, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
-p <- ggplot(mots_up, aes(x=geneSet, y=NES, fill=TFcla6, colour=TFcla6)) + 
-  geom_dotplot(binaxis='y',
-               stackdir='center',
-               stackgroups = TRUE,
-               method='histodot',
-               binwidth=0.1,
-               dotsize=1,
-               alpha=1,
-               stroke=0) +
-  scale_fill_manual(name='',
-                    breaks=levels(mots_up$TFcla6),
-                    values=palette,
-                    labels=levels(mots_up$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
-  scale_colour_manual(name='',
-                    breaks=levels(mots_up$TFcla6),
-                    values=palette,
-                    labels=levels(mots_up$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
-  xlab('TFs linked to enriched motifs') +
-  theme(axis.text.x = element_markdown(face='bold', size=10),
-        aspect.ratio = 0.5,
-        legend.position = 'bottom')
-p
-```
-
-Now we need to identify specific TFs: _da_, members of the _ac/sc_ Complex (_ac_, _sc_, _ase_, _l(1)sc_), and maybe other essential ones (_klu_, _nub/pdm1_)
-```{r mark_special_TFs, fig.width=5, fig.height=4}
-# using https://stackoverflow.com/questions/44991607
-tfs.regex <- c('da', 'sc', 'ase', 'E\\(spl\\)')
-tfs.var <- c('da', 'sc', 'ase', 'E(spl)')
-for (j in 1:length(tfs.regex)) {
-  mots_up <- mots_up %>%
-    mutate('{tfs.var[[j]]}' := if_else(
-      (str_detect(as.character(mots_up$TFs), tfs.regex[[j]]) & TFcla6=='bHLH'),
-      tfs.var[[j]], NA) )
-}
-mots_up <- mots_up %>%
-  unite('tf.labs', all_of(tfs.var), sep = ', ', na.rm = TRUE, remove=FALSE)
-
-# to get the lines of ggrepel text where we want:
-built <- ggplot_build(p)
-point.pos <- built$data[[1]]
-size <- dev.size(units = 'px')
-extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
-bw <- point.pos$binwidth[[1]]
-# por la cuenta de la vieja, al final
-xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1] / extent[2]) * (38/64)
-ytext <- point.pos$y
-
-p +
-  geom_text_repel(
-    # reindex - point.pos is organised by X values, then by FILL colour
-    # which equates to ordering tf.lab as X, then TFclass, then NES
-    aes(label = arrange(mots_up, geneSet, TFcla6, NES)$da,
-        x = xtext, y = ytext,
-        colour = arrange(mots_up, geneSet, TFcla6, NES)$TFcla6),
-    size=3,
-    # general
-    max.overlaps = Inf,
-    # position
-    direction = 'both',
-    nudge_x = -0.25,
-    nudge_y = 1.5,
-    # segment
-    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
-    min.segment.length = 0,
-    segment.color = 'gray30',
-    segment.alpha = 0.75,
-    segment.size = 0.2) +
-  geom_text_repel(
-    # reindex - point.pos is organised by X values, then by FILL colour
-    # which equates to ordering tf.lab as X, then TFclass, then NES
-    aes(label = arrange(mots_up, geneSet, TFcla6, NES)$sc,
-        x = xtext, y = ytext,
-        colour = arrange(mots_up, geneSet, TFcla6, NES)$TFcla6),
-    size=3,
-    # general
-    max.overlaps = Inf,
-    # position
-    direction = 'both',
-    nudge_x = 0.4,
-    nudge_y = 0,
-    # segment
-    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
-    min.segment.length = 0,
-    segment.color = 'gray30',
-    segment.alpha = 0.75,
-    segment.size = 0.2) +
-  guides(fill = guide_legend(nrow=1),
-         colour = guide_legend(nrow=1)) +
-  ylim(2.5,10)
-```
-
-```{r}
+dotparams <- list(binwidth=0.1, dotsize=1, alpha=1, stroke=0)
+texts <- list(x_label   = 'TFs linked to enriched motifs',
+              target_class = 'bHLH',
+              tfs.regex = c('da', 'sc', 'ase', 'E\\(spl\\)'),
+              tfs.var   = c('da', 'sc', 'ase', 'E(spl)'),
+              tfs.select = c('da', 'sc')) # this _must_ be 2 genes
+p <- class.swarm(mots_up, 'geneSet', 'TFs', 'NES', 'TFcla6', dotparams, palette, texts)
+p + ylim(2.5,10)
 ggsave(paste0(figdir, '/motifs_up_TFclass.pdf'))
 ```
 
-Now for the downregulataed genes:
-
-```{r dotplot_NES_TFclass_down, fig.width=4.5, fig.height=4}
+**For motifs in downregulated genes**:
+```{r dotplot_NES_TFclass_2, warning=FALSE, fig.width=5, fig.height=4}
 palette <- c( brewer.pal(12, 'Paired')[c(8, 6, 2, 4, 10)], '#CCCCCC' )
-q <- ggplot(mots_dn, aes(x=geneSet, y=NES, fill=TFcla6, colour=TFcla6)) + 
-  geom_dotplot(binaxis='y',
-               stackdir='center',
-               stackgroups = TRUE,
-               method='histodot',
-               binwidth=0.1,
-               dotsize=1,
-               alpha=1,
-               stroke=0) +
-  scale_fill_manual(name='',
-                    breaks=levels(mots_dn$TFcla6),
-                    values=palette,
-                    labels=levels(mots_dn$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
-  scale_colour_manual(name='',
-                    breaks=levels(mots_dn$TFcla6),
-                    values=palette,
-                    labels=levels(mots_dn$TFcla6),
-                    guide=guide_legend(nrow = 1)) +
-  xlab('TFs linked to enriched motifs') +
-  theme(axis.text.x = element_markdown(face='bold', size=10),
-        aspect.ratio = 0.5,
-        legend.position = 'bottom')
-
-tfs.regex <- c('da', 'sc', 'ase', 'E\\(spl\\)')
-tfs.var <- c('da', 'sc', 'ase', 'E(spl)')
-for (j in 1:length(tfs.regex)) {
-  mots_dn <- mots_dn %>%
-    mutate('{tfs.var[[j]]}' := if_else(
-      (str_detect(as.character(mots_dn$TFs), tfs.regex[[j]]) & TFcla6=='bHLH'),
-      tfs.var[[j]], NA) )
-}
-mots_dn <- mots_dn %>%
-  unite('tf.labs', all_of(tfs.var), sep = ', ', na.rm = TRUE, remove=FALSE)
-
-# to get the lines of ggrepel text where we want:
-built <- ggplot_build(q)
-point.pos <- built$data[[1]]
-size <- dev.size(units = 'px')
-extent <- with(built$layout$panel_params[[1]], abs(c(diff(x.range), diff(y.range))))
-bw <- point.pos$binwidth[[1]]
-# por la cuenta de la vieja, al final
-xtext <- point.pos$x + point.pos$stackpos * bw * (size[2] / size[1]) * (extent[1] / extent[2]) * (38/64)
-ytext <- point.pos$y
-
-q +
-  geom_text_repel(
-    # reindex - point.pos is organised by X values, then by FILL colour
-    # which equates to ordering tf.lab as X, then TFclass, then NES
-    aes(label = arrange(mots_dn, geneSet, TFcla6, NES)$da,
-        x = xtext, y = ytext,
-        colour = arrange(mots_dn, geneSet, TFcla6, NES)$TFcla6),
-    size=2,
-    # general
-    max.overlaps = Inf,
-    # position
-    direction = 'both',
-    nudge_x = -0.25,
-    nudge_y = 0,
-    force_pull = 0.5,
-    # segment
-    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
-    min.segment.length = 0,
-    segment.color = 'gray30',
-    segment.alpha = 0.75,
-    segment.size = 0.2) +
-  geom_text_repel(
-    aes(label = arrange(mots_dn, geneSet, TFcla6, NES)$`E(spl)`,
-        x = xtext, y = ytext,
-        colour = arrange(mots_dn, geneSet, TFcla6, NES)$TFcla6),
-    size=2,
-    # general
-    max.overlaps = Inf,
-    # position
-    direction = 'both',
-    nudge_x = -0.25,
-    nudge_y = 3,
-    xlim = c(0.4, 3.5),
-    ylim = c(6,10),
-    force = 0.8,
-    box.padding = 0.2,
-    force_pull = 0,
-    # segment
-    #arrow = arrow(angle=20, length = unit(0.015, "npc")),
-    min.segment.length = 0,
-    segment.color = 'gray30',
-    segment.alpha = 0.75,
-    segment.size = 0.2) +
-  guides(fill = guide_legend(nrow=1),
-         colour = guide_legend(nrow=1)) +
-  ylim(2.5,10) +
+texts$tfs.select = c('da', 'E(spl)')
+p <- class.swarm(mots_dn, 'geneSet', 'TFs', 'NES', 'TFcla6', dotparams, palette, texts)
+p + ylim(2.5,10) +
   theme(plot.margin = margin(r = 50))
-```
-
-```{r}
 ggsave(paste0(figdir, '/motifs_down_TFclass.pdf'))
 ```
-
-
-### 3.1 Rank lollipop plot (experiment)
-
-
-The beeswarm plot loses a bit the idea of the rank, so I try the lollipop plot, which will show as a continuously increasing function with the colour indicating the type of TF.
-
-```{r}
-palette <- c( brewer.pal(12, 'Paired')[c(6, 8, 4, 2, 10)], '#CCCCCC' )
-r <- ggplot(mots_up, aes(x=index, y=NES)) +
-  geom_segment(aes(x = index, xend = index, y = 0, yend = NES, colour=TFcla6),
-               linewidth=0.1) +
-  geom_point(aes(fill=TFcla6),
-             size = 1, shape=21, stroke=0) +
-  scale_colour_manual(name='',
-                      breaks=mots_up$TFcla6,
-                      values=palette,
-                      labels=mots_up$TFcla6) +
-  scale_fill_manual(name='',
-                    breaks=mots_up$TFcla6,
-                    values=palette,
-                    labels=mots_up$TFcla6) +
-  facet_grid(. ~ geneSet,  scales = "free", space = 'free') +
-  xlab("TF class for enriched motif") +
-  theme(strip.text.x = element_markdown(face='bold', colour='black', size=10),
-        strip.background.x = element_rect(fill=cet_pal(9, name='cbd1')[[6]],
-                                          colour='white'),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.position = 'bottom'
-        )
-r
-```
-
-Something is going on with the colours (which didn't happen the other day!), but I will not continue with the experiment, as I do not think it looks any better.
